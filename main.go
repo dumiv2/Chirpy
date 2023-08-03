@@ -3,25 +3,31 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"github.com/go-chi/chi/v5"
+	_ "github.com/go-chi/chi/v5/middleware"
 )
 
 
 func main() {
 	cfg := apiConfig{}
 	port := "8080"
-	mux := http.NewServeMux()
-	mux.Handle("/app/",http.StripPrefix("/app",cfg.middlewareMetricsInc(http.FileServer(http.Dir(".")))))
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request){
+	//mux := http.NewServeMux()
+	r := chi.NewRouter()
+	fsHandler := cfg.middlewareMetricsInc(http.StripPrefix("/app",http.FileServer(http.Dir("."))))
+	r.Handle("/app/*",fsHandler)
+	r.Handle("/app",fsHandler)
+
+	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request){
 		w.Write([]byte("OK"))
 		w.WriteHeader(200)
 		w.Header().Add("Content-Type","text/plain; charset=utf-8")
 	})
-	mux.HandleFunc("/metrics", func (w http.ResponseWriter , r *http.Request){
+	r.Get("/metrics", func (w http.ResponseWriter , r *http.Request){
 
 		w.Write([]byte(fmt.Sprintf("Hits : %v",cfg.fileserverHits) ))
 	})
 
-	corsMux := middlewareCors(mux)
+	corsMux := middlewareCors(r)
 
 	srv := &http.Server {
 		Addr : ":" + port,
