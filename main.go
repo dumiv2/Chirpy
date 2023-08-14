@@ -4,15 +4,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
+	"github.com/Hardcorelevelingwarrior/chap3/internal"
 	"github.com/go-chi/chi/v5"
 	_ "github.com/go-chi/chi/v5/middleware"
 )
-
+type Chirp struct {
+	Id int `json:"id,omitempty"`
+	Body string `json:"body,omitempty"`
+	
+}
 
 func main() {
+	db, _ := internal.NewDB("database.json")
 	cfg := apiConfig{}
 	port := "8080"
 	//mux := http.NewServeMux()
@@ -28,42 +36,78 @@ func main() {
 		w.Header().Add("Content-Type","text/plain; charset=utf-8")
 		w.Write([]byte("OK"))
 	})
-	c.Post("/validate_chirp",func(w http.ResponseWriter, r *http.Request) {
-		type chirp struct {
-			Body string `json:"body"`
-		}
-		type validate struct {
-			Err string `json:"error,omitempty"`
-			Valid bool `json:"valid,omitempty"`
-			Cleanbody string `json:"cleaned_body,omitempty"`
-		}
-		validate_chirp := validate{
-			Valid : true,
-		}
-		dat , _:= json.Marshal(validate_chirp)
+	c.Post("/chirps",func(w http.ResponseWriter, r *http.Request) {
 		decoder := json.NewDecoder(r.Body)
-		chirpee := chirp{}
-		err := decoder.Decode(&chirpee)
-		
+		newchirp := Chirp{}
+		err := decoder.Decode(&newchirp)
 		if err != nil {
-			validate_chirp := validate{
-				Err : "Cannot marshaling" ,
-			}
-			dat,_ := json.Marshal(validate_chirp)
-			w.WriteHeader(400)
-			w.Write(dat)
-			return
+			panic(err)
 		}
-		if len(chirpee.Body) > 140 {
-			validate_chirp := validate{
-				Err : "Chirp is too long" ,
-			}
-			dat,_ := json.Marshal(validate_chirp)
-			w.WriteHeader(400)
-			w.Write(dat)
-			return
+		db.CreateChirp(newchirp.Body)
+		re , _ := json.Marshal(newchirp)
+		w.Write(re)
+	})
+	c.Get("/chirps",func(w http.ResponseWriter, r *http.Request) {
+		data , _ := db.GetChirps()
+		jsonData, err := json.Marshal(data)
+		if err != nil {
+			panic(err)
 		}
-		w.Write(dat)
+		w.Write(jsonData)
+	})
+
+	c.Get( "/chirps/{chirpID}" ,func(w http.ResponseWriter, r *http.Request) {
+		chirpID, err := strconv.Atoi(chi.URLParam(r, "chirpID"))
+	if err != nil {
+		http.Error(w, http.StatusText(400), 400)
+		return
+	}
+	data , _ := db.GetChirpsById(chirpID)
+	if data.Body == "" {
+		w.WriteHeader(404)
+		return
+	}
+	re, _ := json.Marshal(data)
+	w.Write(re)
+	})
+	c.Post("/users",func(w http.ResponseWriter, r *http.Request) {
+		decoder := json.NewDecoder(r.Body)
+		newusers := internal.User{}
+		err := decoder.Decode(&newusers)
+		if err != nil {
+			panic(err)
+		}
+		usersforshow := internal.User{
+			Id: newusers.Id,
+			Email: newusers.Email,
+		}
+		_, er := db.CreateUser(newusers.Email,newusers.Password)
+		if er != nil {fmt.Println(er)}
+		re , _ := json.Marshal(usersforshow)
+		w.WriteHeader(201)
+		w.Write(re)
+	})
+	c.Post("/login",func(w http.ResponseWriter, r *http.Request) {
+		decoder := json.NewDecoder(r.Body)
+		newusers := internal.User{}
+		err := decoder.Decode(&newusers)
+		if err != nil {
+			panic(err)
+		}
+		usersforshow := internal.User{
+			Id: newusers.Id,
+			Email: newusers.Email,
+		}
+		_ , er := db.GetUserbyEmail(newusers.Email,newusers.Password)
+		if er != nil {
+			fmt.Println(er)
+			w.WriteHeader(401)
+			return
+
+		}
+		re , _ := json.Marshal(usersforshow)
+		w.WriteHeader(201)
+		w.Write(re)
 	})
 	d.Get("/metrics", func (w http.ResponseWriter , r *http.Request){
 		w.Header().Add("Content-Type","text/html")
@@ -89,7 +133,7 @@ func main() {
 		Addr : ":" + port,
 		Handler: corsMux,
 	}
-	srv.ListenAndServe()
+	log.Fatal(srv.ListenAndServe())
 	
 }
 
