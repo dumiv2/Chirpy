@@ -10,19 +10,19 @@ podTemplate(yaml: '''
         args:
         - 99d
       restartPolicy: Never
-
 ''') {
   node(POD_LABEL) {
     stage('Get the project') {
       git url: 'https://github.com/Hardcorelevelingwarrior/chap3', branch: 'main'
+    }
+    stage("Perform SAST with Sonarqube") {
+      def scannerHome = tool name: 'sonarqube', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
+      def jdkHome = tool name: 'Java 17', type: 'hudson.model.JDK'
+      withSonarQubeEnv('sonarqube') {
+        withEnv(["JAVA_HOME=${jdkHome}", "PATH+JDK=${jdkHome}/bin"]) {
+          sh "${scannerHome}/bin/sonar-scanner"
         }
-    stage("Perform SAST with Sonarqube"){
-            def scannerHome = tool 'sonarqube';
-             name: 'Java 17', type: 'hudson.model.JDK'
-    withSonarQubeEnv('sonarqube') { 
-      sh "${scannerHome}/bin/sonar-scanner"
+      }
     }
   }
 }
-}
-  
