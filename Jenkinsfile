@@ -17,7 +17,8 @@ podTemplate(yaml: '''
       git url: 'https://github.com/Hardcorelevelingwarrior/chap3', branch: 'main'
         }
     stage("Perform SAST with Sonarqube"){
-            def scannerHome = tool name: 'Java 17', type: 'hudson.model.JDK'
+            def scannerHome = tool 'sonarqube';
+             name: 'Java 17', type: 'hudson.model.JDK'
     withSonarQubeEnv('sonarqube') { 
       sh "${scannerHome}/bin/sonar-scanner"
     }
