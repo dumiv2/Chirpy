@@ -4,7 +4,7 @@ podTemplate(yaml: '''
     spec:
       containers:
       - name: maven
-        image: ubuntu:latest
+        image: openjdk:11-jre-slim
         command:
         - sleep
         args:
