@@ -18,7 +18,7 @@ podTemplate(yaml: '''
         }
     stage("Perform SAST with Sonarqube"){
             def scannerHome = tool 'sonarqube';
-    withSonarQubeEnv('sonar') { 
+    withSonarQubeEnv('sonarqube') { 
       sh "${scannerHome}/bin/sonar-scanner"
     }
   }
