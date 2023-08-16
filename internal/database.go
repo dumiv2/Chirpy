@@ -9,7 +9,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -34,6 +33,8 @@ type User struct {
 	Id int `json:"id,omitempty"`
 	Email string `json:"email,omitempty"`
 	Password string `json:"password,omitempty"`
+    Expr int `json:"expires_in_seconds,omitempty"`
+    Token *string `json:"token,omitempty"`
 }
 // NewDB creates a new database connection
 // and creates the database file if it doesn't exist
@@ -41,7 +42,7 @@ func NewDB(path string) (*DB, error) {
     db := &DB{
         path: path,
         mux:  &sync.RWMutex{},
-        maxID: 0,
+        maxID: -1,
     }
     if err := db.ensureDB(); err != nil {
         os.Create("database.json")
@@ -108,6 +109,24 @@ func (db *DB) CreateUser(email string, passwd string) (User, error) {
     dbstruct.Users[newusers.Id] = newusers
     db.writeDB(dbstruct)
     return newusers, nil
+}
+func (db *DB) UpdateUser(id int , email string, passwd string) (User, error) {
+    db.mux.Lock()
+    defer db.mux.Unlock()
+    dbstruct, _ := db.loadDB()
+    for key, data := range dbstruct.Users {
+        if data.Id == id {
+            updatedUser := data
+            updatedUser.Email = email
+            updatedUser.Password = passwd
+            dbstruct.Users[key] = updatedUser
+            db.writeDB(dbstruct)
+            return dbstruct.Users[key] , nil
+        }
+        
+    }
+    return User{}, fmt.Errorf("it cant be found man")
+
 }
 //Get chirp by id 
 func (db *DB) GetChirpsById(chirpID int) (Chirp, error) {

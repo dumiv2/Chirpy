@@ -6,12 +6,16 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Hardcorelevelingwarrior/chap3/internal"
 	"github.com/go-chi/chi/v5"
 	_ "github.com/go-chi/chi/v5/middleware"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/joho/godotenv"
 )
 type Chirp struct {
 	Id int `json:"id,omitempty"`
@@ -20,8 +24,13 @@ type Chirp struct {
 }
 
 func main() {
+	tokenn := ""
+	tok := &tokenn
+	godotenv.Load()
 	db, _ := internal.NewDB("database.json")
-	cfg := apiConfig{}
+	cfg := apiConfig{
+		jwtSecret: os.Getenv("JWT_SECRET"),
+	}
 	port := "8080"
 	//mux := http.NewServeMux()
 	r := chi.NewRouter()
@@ -87,16 +96,29 @@ func main() {
 		w.WriteHeader(201)
 		w.Write(re)
 	})
-	c.Post("/login",func(w http.ResponseWriter, r *http.Request) {
+	c.Post("/login", func (w http.ResponseWriter, r *http.Request) {
 		decoder := json.NewDecoder(r.Body)
-		newusers := internal.User{}
+		newusers := internal.User{
+			Expr: 24*60*60,
+		}
 		err := decoder.Decode(&newusers)
 		if err != nil {
 			panic(err)
 		}
-		usersforshow := internal.User{
-			Id: newusers.Id,
-			Email: newusers.Email,
+
+
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256,jwt.RegisteredClaims{
+			Issuer: "chirpy",
+			IssuedAt: jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(newusers.Expr) *  time.Second)),
+			Subject: strconv.Itoa(newusers.Id),
+		})
+		tokenforshow, eror := token.SignedString([]byte(cfg.jwtSecret))
+		if eror != nil {
+			fmt.Println(eror)
+			w.WriteHeader(401)
+			return
+
 		}
 		_ , er := db.GetUserbyEmail(newusers.Email,newusers.Password)
 		if er != nil {
@@ -105,10 +127,57 @@ func main() {
 			return
 
 		}
+		usersforshow := internal.User{
+			Id: newusers.Id,
+			Email: newusers.Email,
+			Token: &tokenforshow,
+		}
+		
 		re , _ := json.Marshal(usersforshow)
-		w.WriteHeader(201)
+		w.WriteHeader(200)
+		w.Write(re)
+		*tok = tokenforshow
+	})
+	c.Put("/users",func(w http.ResponseWriter, r *http.Request) {
+		r.Header.Set("Authorization", "Bearer "+tokenn)
+		key := strings.TrimPrefix(r.Header.Get("Authorization"),"Bearer ")
+		//fmt.Println(key)
+		token , err := jwt.ParseWithClaims(key, &jwt.RegisteredClaims{},func(token *jwt.Token) (interface{}, error) {
+			return []byte(cfg.jwtSecret), nil
+		})
+		if err != nil {
+			w.WriteHeader(401)
+			fmt.Println(err)
+			return
+		}
+		claims , ok := token.Claims.(*jwt.RegisteredClaims)
+		if !ok {
+			w.WriteHeader(401)
+			fmt.Println(ok)
+			return
+		}
+		if claims.ExpiresAt.Unix() < time.Now().Unix() {
+			w.WriteHeader(401)
+			fmt.Println("error")
+			return
+		}
+		userId := claims.Subject
+		Id,_ := strconv.Atoi(userId)
+		decode := json.NewDecoder(r.Body)
+		newuser := internal.User{}
+		decode.Decode(&newuser)
+		data, errerr := db.UpdateUser(Id,newuser.Email,newuser.Password)
+		if errerr != nil {
+			fmt.Println(errerr)
+		}
+		re, ec := json.Marshal(data)
+		if ec != nil {
+			fmt.Println(ec)
+			return 
+		}
 		w.Write(re)
 	})
+
 	d.Get("/metrics", func (w http.ResponseWriter , r *http.Request){
 		w.Header().Add("Content-Type","text/html")
 
@@ -152,6 +221,7 @@ func middlewareCors(next http.Handler) http.Handler {
 
 type apiConfig struct {
 	fileserverHits int
+	jwtSecret string
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
