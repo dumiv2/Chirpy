@@ -4,7 +4,7 @@ podTemplate(yaml: '''
     spec:
       containers:
       - name: maven
-        image: openjdk:9-jre-slim
+        image: openjdk:11-jre-slim
         command:
         - sleep
         args:
@@ -17,7 +17,7 @@ podTemplate(yaml: '''
       git url: 'https://github.com/Hardcorelevelingwarrior/chap3', branch: 'main'
         }
     stage("Perform SAST with Sonarqube"){
-            def scannerHome = tool 'sonarqube';
+            def scannerHome = tool name: 'Java 11', type: 'hudson.model.JDK'
     withSonarQubeEnv('sonarqube') { 
       sh "${scannerHome}/bin/sonar-scanner"
     }
