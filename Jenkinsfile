@@ -29,30 +29,31 @@ podTemplate(yaml: '''
 ''') {
   node(POD_LABEL) {
     stage('Get the project') {
-      git url: 'https://github.com/Hardcorelevelingwarrior/chap3', branch: 'main'
+        git url: 'https://github.com/Hardcorelevelingwarrior/chap3', branch: 'main'
     }
-container("go"){
-    stage("Perform SAST with Sonarqube") {
-      def scannerHome = tool name: 'sonarqube', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
-      def jdkHome = tool name: 'Java 17', type: 'hudson.model.JDK'
-      withSonarQubeEnv('sonarqube') {
-        withEnv(["JAVA_HOME=${jdkHome}", "PATH+JDK=${jdkHome}/bin"]) {
-          sh "${scannerHome}/bin/sonar-scanner"
+    container("go") {
+        stage("Perform SAST with Sonarqube") {
+            def scannerHome = tool name: 'sonarqube', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
+            def jdkHome = tool name: 'Java 17', type: 'hudson.model.JDK'
+            withSonarQubeEnv('sonarqube') {
+                withEnv(["JAVA_HOME=${jdkHome}", "PATH+JDK=${jdkHome}/bin"]) {
+                    sh "${scannerHome}/bin/sonar-scanner"
+                }
+            }
         }
-      }
-    }}
-container("kaniko"){
-    stage("Dockerizing the app"){
-                  sh '''
-            /kaniko/executor --context `pwd` --destination conmeobeou1253/go-app:1.0
-          '''
-  }
-}
-stage('Deploy to Kubernetes') {
-            steps {
-                script {
-                    // Define the Kubernetes deployment
-                    def deployment = """
+    }
+    container("kaniko") {
+        stage("Dockerizing the app") {
+            sh '''
+                /kaniko/executor --context `pwd` --destination conmeobeou1253/go-app:1.0
+            '''
+        }
+    }
+    stage('Deploy to Kubernetes') {
+        steps {
+            script {
+                // Define the Kubernetes deployment
+                def deployment = """
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -74,10 +75,11 @@ spec:
         - containerPort: 8080
 """
 
-                    // Apply the Kubernetes deployment
-                    sh "echo '${deployment}' | kubectl apply -f -"
-                }
+                // Apply the Kubernetes deployment
+                sh "echo '${deployment}' | kubectl apply -f -"
             }
+        }
+    }
 }
-}
+
 }
