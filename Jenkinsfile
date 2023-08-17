@@ -3,7 +3,7 @@ podTemplate(yaml: '''
     kind: Pod
     spec:
       containers:
-      - name: maven
+      - name: go
         image: openjdk:11-jre-slim
         command:
         - sleep
@@ -20,12 +20,13 @@ podTemplate(yaml: '''
       def jdkHome = tool name: 'Java 17', type: 'hudson.model.JDK'
       withSonarQubeEnv('sonarqube') {
         withEnv(["JAVA_HOME=${jdkHome}", "PATH+JDK=${jdkHome}/bin"]) {
-           sh 'ls $JAVA_HOME/bin'
-           sh 'echo $JAVA_HOME'
-  sh 'echo $PATH'
           sh "${scannerHome}/bin/sonar-scanner"
         }
       }
+    }
+    stage("Dockerizing the app"){
+        script {
+                    def dockerImage = docker.build("my-image:${env.BUILD_ID}", ".")
     }
   }
 }
