@@ -25,9 +25,7 @@ podTemplate(yaml: '''
       }
     }
     stage("Dockerizing the app"){
-        script {
-                    def dockerImage = docker.build("my-image:${env.BUILD_ID}", ".")
-    }
+        sh 'docker build -t goapp'
   }
 }
 }
