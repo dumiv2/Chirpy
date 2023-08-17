@@ -3,7 +3,7 @@ podTemplate(yaml: '''
     kind: Pod
     spec:
       containers:
-        - name: kubectl
+      - name: kubectl
         image: lachlanevenson/k8s-kubectl
         command:
         - sleep
