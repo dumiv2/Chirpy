@@ -126,8 +126,10 @@ sh '''while true; do
     fi
     sleep 1
 done
-'''    }
-sh 'kubectl describe scan zap-baseline-scan-bodgeit'
+'''
+sh 'kubectl describe scan zap-baseline-scan-bodgeit' 
+   }
+
 }
 
 
