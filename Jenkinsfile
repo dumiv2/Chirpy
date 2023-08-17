@@ -91,15 +91,28 @@ stage('ZAP Scan') {
         // Define the ZAP ScanType
         container('kubectl') {
         def zapScan = """
+# SPDX-FileCopyrightText: the secureCodeBox authors
+#
+# SPDX-License-Identifier: Apache-2.0
+
 apiVersion: "execution.securecodebox.io/v1"
 kind: Scan
 metadata:
-  name: "zap-scan"
+  name: "zap-baseline-scan-bodgeit"
+  labels:
+    organization: "OWASP"
 spec:
-  scanType: "zap"
+  scanType: "zap-baseline-scan"
   parameters:
+    # target URL including the protocol
     - "-t"
-    - "http://10.244.0.36:8080"
+    - "http:10.244.0.36:8080"
+    # show debug messages
+    - "-d"
+    # the number of minutes to spider for (default 1)
+    - "-m"
+    - "2"
+
 """
 
         // Apply the ZAP ScanType
