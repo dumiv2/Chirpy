@@ -76,7 +76,7 @@ spec:
     spec:
       containers:
       - name: my-app
-        image: conmeobeou1253/go-app
+        image: conmeobeou1253/go-app:1.0
         ports:
         - containerPort: 8080
 """
