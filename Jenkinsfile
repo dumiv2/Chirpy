@@ -43,7 +43,7 @@ container("go"){
     }}
 container("kaniko"){
     stage("Dockerizing the app"){
-        sh 'ls -l /home/jenkins/agent/workspace/Gotest'
+        sh 'ls -l /home/jenkins/agent/workspace/Gotest/go.mod'
 
                   sh '''
             /kaniko/executor --context `pwd` --destination conmeobeou1253/go-app:1.0
