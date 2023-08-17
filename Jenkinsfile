@@ -48,5 +48,36 @@ container("kaniko"){
           '''
   }
 }
+stage('Deploy to Kubernetes') {
+            steps {
+                script {
+                    // Define the Kubernetes deployment
+                    def deployment = """
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: my-app
+  template:
+    metadata:
+      labels:
+        app: my-app
+    spec:
+      containers:
+      - name: my-app
+        image: conmeobeou1253/go-app
+        ports:
+        - containerPort: 8080
+"""
+
+                    // Apply the Kubernetes deployment
+                    sh "echo '${deployment}' | kubectl apply -f -"
+                }
+            }
+}
 }
 }
