@@ -86,6 +86,30 @@ spec:
             }
     }
     }
+
+stage('ZAP Scan') {
+        // Define the ZAP ScanType
+        container('kubectl') {
+        def zapScan = """
+apiVersion: "execution.securecodebox.io/v1"
+kind: Scan
+metadata:
+  name: "zap-scan"
+spec:
+  scanType: "zap"
+  parameters:
+    - "-t"
+    - "http://10.244.0.36:8080"
+"""
+
+        // Apply the ZAP ScanType
+        sh "echo '${zapScan}' | kubectl apply -f -"
+
+        // Wait for the ZAP scan to complete
+        sh 'kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=zap-scan --timeout=-1s'
+    }
+}
+
 }
 
 }
