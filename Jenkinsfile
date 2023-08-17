@@ -50,7 +50,6 @@ podTemplate(yaml: '''
         }
     }
     stage('Deploy to Kubernetes') {
-        steps {
             script {
                 // Define the Kubernetes deployment
                 def deployment = """
@@ -78,7 +77,6 @@ spec:
                 // Apply the Kubernetes deployment
                 sh "echo '${deployment}' | kubectl apply -f -"
             }
-        }
     }
 }
 
