@@ -119,9 +119,10 @@ spec:
         sh "echo '${zapScan}' | kubectl apply -f -"
 
         // Wait for the ZAP scan to complete
-        sh 'kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance=zap-scan --timeout=-1s'
-    }
+sh 'kubectl wait --for=condition=completed scan/zap-baseline-scan-bodgeit --timeout=-1s'    }
+sh 'kubectl describe scan zap-baseline-scan-bodgeit'
 }
+
 
 }
 
