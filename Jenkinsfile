@@ -119,14 +119,14 @@ spec:
         sh "echo '${zapScan}' | kubectl apply -f -"
 
         // Wait for the ZAP scan to complete
-sh 'while true; do
+sh '''while true; do
     state=$(kubectl get scans.execution.securecodebox.io zap-baseline-scan-bodgeit -o jsonpath="{.status.state}")
     if [ "$state" == "Done" ]; then
         break
     fi
     sleep 1
 done
-'    }
+'''    }
 sh 'kubectl describe scan zap-baseline-scan-bodgeit'
 }
 
