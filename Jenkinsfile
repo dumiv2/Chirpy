@@ -3,6 +3,12 @@ podTemplate(yaml: '''
     kind: Pod
     spec:
       containers:
+        - name: kubectl
+        image: lachlanevenson/k8s-kubectl
+        command:
+        - sleep
+        args:
+        - 99d
       - name: go
         image: openjdk:11-jre-slim
         command:
@@ -50,6 +56,7 @@ podTemplate(yaml: '''
         }
     }
     stage('Deploy to Kubernetes') {
+         container('kubectl') {
             script {
                 // Define the Kubernetes deployment
                 def deployment = """
@@ -77,6 +84,7 @@ spec:
                 // Apply the Kubernetes deployment
                 sh "echo '${deployment}' | kubectl apply -f -"
             }
+    }
     }
 }
 
