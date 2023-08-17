@@ -31,6 +31,7 @@ podTemplate(yaml: '''
     stage('Get the project') {
       git url: 'https://github.com/Hardcorelevelingwarrior/chap3', branch: 'main'
     }
+container("go"){
     stage("Perform SAST with Sonarqube") {
       def scannerHome = tool name: 'sonarqube', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
       def jdkHome = tool name: 'Java 17', type: 'hudson.model.JDK'
@@ -39,9 +40,13 @@ podTemplate(yaml: '''
           sh "${scannerHome}/bin/sonar-scanner"
         }
       }
-    }
+    }}
+container("kaniko"){
     stage("Dockerizing the app"){
-        sh 'docker build -t goapp'
+                  sh '''
+            /kaniko/executor --context `pwd` --destination conmeobeou1253/go-app:1.0
+          '''
   }
+}
 }
 }
