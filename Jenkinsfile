@@ -128,6 +128,16 @@ sh '''while true; do
 done
 '''
 sh 'kubectl describe scan zap-baseline-scan-bodgeit' 
+// Get the download links for the scan results
+                def findingDownloadLink = sh(returnStdout: true, script: 'kubectl get scans.execution.securecodebox.io zap-baseline-scan-bodgeit -o jsonpath="{.status.findingDownloadLink}"').trim()
+                def rawResultDownloadLink = sh(returnStdout: true, script: 'kubectl get scans.execution.securecodebox.io zap-baseline-scan-bodgeit -o jsonpath="{.status.rawResultDownloadLink}"').trim()
+
+                // Download the scan results
+                sh "curl -L -o findings.json '${findingDownloadLink}'"
+                sh "curl -L -o zap-results.xml '${rawResultDownloadLink}'"
+
+                // Archive the scan results as artifacts
+                archiveArtifacts artifacts: 'findings.json,zap-results.xml', fingerprint: true
    }
 
 }
