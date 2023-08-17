@@ -106,7 +106,7 @@ spec:
   parameters:
     # target URL including the protocol
     - "-t"
-    - "http:10.244.0.36:8080"
+    - "http://10.244.0.36:8080"
     # show debug messages
     - "-d"
     # the number of minutes to spider for (default 1)
