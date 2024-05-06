@@ -23,7 +23,7 @@ podTemplate(yaml: '''
     container("go") {
         stage("Perform SAST with Sonarqube") {
             def scannerHome = tool name: 'sonar', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
-            def jdkHome = tool name: 'Java 17', type: 'hudson.model.JDK'
+            //def jdkHome = tool name: 'Java 17', type: 'hudson.model.JDK'
             withSonarQubeEnv('sonar') {
                 withEnv(["JAVA_HOME=${jdkHome}", "PATH+JDK=${jdkHome}/bin"]) {
                     sh "${scannerHome}/bin/sonar-scanner"
