@@ -10,7 +10,7 @@ podTemplate(yaml: '''
         args:
         - 99d
       - name: go
-        image: openjdk:11-jre-slim
+        image: openjdk:23-jdk-slim
         command:
         - sleep
         args:
@@ -24,7 +24,7 @@ podTemplate(yaml: '''
         stage("Perform SAST with Sonarqube") {
             def scannerHome = tool name: 'sonar', type: 'hudson.plugins.sonar.SonarRunnerInstallation'
             withSonarQubeEnv('sonar') {
-                withEnv(["JAVA_HOME=/usr/local/openjdk-11", "PATH+JDK=/usr/local/openjdk-11/bin"]) {
+                withEnv(["JAVA_HOME=/usr/local/openjdk-23", "PATH+JDK=/usr/local/openjdk-23/bin"]) {
                     sh "${scannerHome}/bin/sonar-scanner"
                 }
             }
