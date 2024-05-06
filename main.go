@@ -737,8 +737,6 @@ func BookPlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 			http.Error(w, "Invalid start time", http.StatusBadRequest)
 			return
 		}
-		
-
 		durationStr := r.Form.Get("duration")
 		duration, err := strconv.Atoi(durationStr)
 		if err != nil {
