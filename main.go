@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"html/template"
+
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -78,97 +79,89 @@ func main() {
 
 	r.Post("/booking", BookPlaygroundHandler(db, apiCfg))
 	r.Get("/booking",BookingHTMLHandler)
+	r.Get("/booking/{playgroundid}", GetBookingsForPlaygroundHandler(db))
+
+
 	r.Get("/login",LoginHTMLHandler)
 	log.Println("Server started on port 8080")
 	http.ListenAndServe(":8080", r)
 }
-func BookingHTMLHandler(w http.ResponseWriter, r *http.Request) {
-    // Read the HTML file
-    htmlData, err := ioutil.ReadFile("booking.html")
+// Define a function to render the page with header and footer templates
+func renderPage(w http.ResponseWriter, r *http.Request, content string) {
+    headerTemplate, err := ioutil.ReadFile("header.html")
     if err != nil {
         http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+        log.Println("Failed to read header HTML file:", err)
         return
     }
 
-    // Set the Content-Type header
+    footerTemplate, err := ioutil.ReadFile("footer.html")
+    if err != nil {
+        http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+        log.Println("Failed to read footer HTML file:", err)
+        return
+    }
+
+	contentTemplate, err := ioutil.ReadFile(content)
+    if err != nil {
+        http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+        log.Println("Failed to read footer HTML file:", err)
+        return
+    }
+
     w.Header().Set("Content-Type", "text/html")
 
-    // Write the HTML response
-    w.Write(htmlData)
+    // Write header template
+    if _, err := w.Write(headerTemplate); err != nil {
+        log.Println("Failed to write header template:", err)
+        return
+    }
+
+    // Write content
+    if _, err := w.Write(contentTemplate); err != nil {
+        log.Println("Failed to write content:", err)
+        return
+    }
+
+    // Write footer template
+    if _, err := w.Write(footerTemplate); err != nil {
+        log.Println("Failed to write footer template:", err)
+        return
+    }
+}
+
+func BookingHTMLHandler(w http.ResponseWriter, r *http.Request) {
+    // Read the HTML file
+    renderPage(w, r, "booking.html")
+
 }
 func OwnerLoginHTMLHandler(w http.ResponseWriter, r *http.Request) {
     // Read the HTML file
-    htmlData, err := ioutil.ReadFile("login_owner.html")
-    if err != nil {
-        http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-        return
-    }
-
-    // Set the Content-Type header
-    w.Header().Set("Content-Type", "text/html")
-
-    // Write the HTML response
-    w.Write(htmlData)
+    renderPage(w, r, "login_owner.html")
 }
 
+// Update your handlers to use the renderPage function
 func MainHTMLHandler(w http.ResponseWriter, r *http.Request) {
-    // Read the HTML file
-    htmlData, err := ioutil.ReadFile("main.html")
-    if err != nil {
-        http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-        return
-    }
+    // Define the content specific to the main page
 
-    // Set the Content-Type header
-    w.Header().Set("Content-Type", "text/html")
 
-    // Write the HTML response
-    w.Write(htmlData)
+    renderPage(w, r, "main.html")
 }
 func ResPlayHTMLHandler(w http.ResponseWriter, r *http.Request) {
     // Read the HTML file
-    htmlData, err := ioutil.ReadFile("res_playground.html")
-    if err != nil {
-        http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-        return
-    }
+    renderPage(w, r, "res_playground.html")
 
-    // Set the Content-Type header
-    w.Header().Set("Content-Type", "text/html")
-
-    // Write the HTML response
-    w.Write(htmlData)
 }
 func LoginUserHTMLHandler(w http.ResponseWriter, r *http.Request) {
     // Read the HTML file
-    htmlData, err := ioutil.ReadFile("login_user.html")
-    if err != nil {
-        http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-        log.Println("Failed to read HTML file:", err)
-        return
-    }
+    renderPage(w, r, "login_user.html")
 
-    // Set the Content-Type header
-    w.Header().Set("Content-Type", "text/html")
-
-    // Write the HTML response
-    w.Write(htmlData)
 }
 
 func LoginHTMLHandler(w http.ResponseWriter, r *http.Request) {
-    // Read the HTML file
-    htmlData, err := ioutil.ReadFile("login.html")
-    if err != nil {
-        http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-        log.Println("Failed to read HTML file:", err)
-        return
-    }
 
-    // Set the Content-Type header
-    w.Header().Set("Content-Type", "text/html")
+    renderPage(w, r, "login.html")
 
-    // Write the HTML response
-    w.Write(htmlData)
 }
 
 func RegisterOwnerHandler(db *booking.DB) http.HandlerFunc {
@@ -220,33 +213,14 @@ func RegisterOwnerHandler(db *booking.DB) http.HandlerFunc {
 
 func RegisterUserHTMLHandler(w http.ResponseWriter, r *http.Request) {
     // Read the HTML file
-    htmlData, err := ioutil.ReadFile("register_user.html")
-    if err != nil {
-        http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-        log.Println("Failed to read HTML file:", err)
-        return
-    }
+    renderPage(w, r, "register_user.html")
 
-    // Set the Content-Type header
-    w.Header().Set("Content-Type", "text/html")
-
-    // Write the HTML response
-    w.Write(htmlData)
 }
 func RegisterOwnerHTMLHandler(w http.ResponseWriter, r *http.Request) {
     // Read the HTML file
-    htmlData, err := ioutil.ReadFile("register_owner.html")
-    if err != nil {
-        http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-        log.Println("Failed to read HTML file:", err)
-        return
-    }
 
-    // Set the Content-Type header
-    w.Header().Set("Content-Type", "text/html")
+    renderPage(w, r, "register_owner.html")
 
-    // Write the HTML response
-    w.Write(htmlData)
 }
 
 
@@ -791,3 +765,35 @@ func BookPlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 }
 
 
+func GetBookingsForPlaygroundHandler(db *booking.DB) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        // Extract the playground ID from the URL parameters
+        playgroundIDStr := chi.URLParam(r, "playgroundid")
+        playgroundID, err := strconv.Atoi(playgroundIDStr)
+        if err != nil {
+            http.Error(w, "Invalid playground ID", http.StatusBadRequest)
+            log.Println("Invalid playground ID:", err)
+            return
+        }
+
+        // Retrieve all bookings for the specified playground
+        bookings, err := db.GetBookingsForPlayground(playgroundID)
+        if err != nil {
+            http.Error(w, "Failed to get bookings for playground: "+err.Error(), http.StatusInternalServerError)
+            log.Println("Failed to get bookings for playground:", err)
+            return
+        }
+
+		tmpl, err := template.ParseFiles("booking_play.html")
+		if err != nil {
+			http.Error(w, "Failed to parse HTML template: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		err = tmpl.Execute(w, bookings)
+		if err != nil {
+			http.Error(w, "Failed to execute HTML template: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+    }
+}
