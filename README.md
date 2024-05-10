@@ -1,6 +1,6 @@
-# Building Chirpy
+# Football Playground Booking System
 
-Chirpy is a social network similar to Twitter, written in Go. In this course, we'll be working on building and deploying Chirpy using Jenkins as a container in Kubernetes for CI/CD.
+The football playground booking system is a web application designed to facilitate the booking of football playgrounds for matches and events. It allows users to browse available playgrounds, schedule matches, and manage bookings.
 
 ## Prerequisites
 
