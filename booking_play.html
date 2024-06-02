@@ -1,10 +1,9 @@
-{{ define "header" }}
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Playground Booking</title>
+    <title>Playground Bookings</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -12,6 +11,9 @@
             padding: 0;
             background-color: #f8f9fa;
             color: #333;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh; /* Ensure the body covers the entire viewport height */
         }
         header {
             background-color: #007bff;
@@ -34,74 +36,33 @@
         nav ul li a:hover {
             text-decoration: underline;
         }
-    </style>
-</head>
-<body>
-    <header>
-        <!-- Header content goes here -->
-        <nav>
-            <ul>
-                <li><a href="/">Home</a></li>
-                <li><a href="/playgrounds">Playgrounds</a></li>
-                <!-- Add more navigation links as needed -->
-            </ul>
-        </nav>
-    </header>
-</body>
-</html>
-
-{{ end }}
-
-{{ define "footer" }}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Playground Booking</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: #f8f9fa;
-            color: #333;
-            display: flex;
-            flex-direction: column;
-            min-height: 100vh; /* Ensure the body covers the entire viewport height */
-        }
-        header {
-            background-color: #007bff;
-            color: #fff;
-            padding: 20px;
-            display: flex;
-            justify-content: space-between; /* Align items horizontally */
-            align-items: center; /* Align items vertically */
-        }
-        nav ul {
-            list-style-type: none;
-            padding: 0;
-            margin: 0;
-            display: flex; /* Use flexbox for navigation links */
-        }
-        nav ul li {
-            margin-right: 20px;
-        }
-        nav ul li:last-child {
-            margin-right: 0; /* Remove margin for the last item */
-        }
-        nav ul li a {
-            color: #fff;
-            text-decoration: none;
-        }
-        nav ul li a:hover {
-            text-decoration: underline;
-        }
-        .login-link {
-            margin-left: auto; /* Push the login link to the far right */
-        }
         main {
             flex: 1; /* Allow the main content to grow to fill available space */
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h2 {
+            color: #333;
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+        ul {
+            list-style: none;
+            padding: 0;
+        }
+        li {
+            background-color: #007bff;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            padding: 10px;
+            color: #fff;
+        }
+        li:hover {
+            background-color: #0056b3;
+        }
+        .date-picker {
+            margin-bottom: 20px;
         }
         footer {
             background-color: #343a40;
@@ -123,65 +84,73 @@
     </style>
 </head>
 <body>
-    <footer>
-        <!-- Footer content goes here -->
-        <p>&copy; 2024 Playground Booking. All rights reserved.</p>
-    </footer>
-</body>
-</html>
-
-{{ end }}
-
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Playground Bookings</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-        }
-        main {
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        h2 {
-            color: #333;
-            font-size: 24px;
-            margin-bottom: 20px;
-        }
-        ul {
-            list-style: none;
-            padding: 0;
-        }
-        li {
-            background-color: #007bff;
-            border-radius: 5px;
-            margin-bottom: 10px;
-            padding: 10px;
-        }
-        li:hover {
-            background-color: #007bff;
-        }
-    </style>
-</head>
-<body>
-    {{ template "header" }}
+    <header>
+        <nav>
+            <ul>
+                <li><a href="/">Home</a></li>
+                <li><a href="/playgrounds">Playgrounds</a></li>
+                <!-- Add more navigation links as needed -->
+            </ul>
+        </nav>
+    </header>
 
     <main>
-        <h2>List of Bookings for Playground:</h2>
-        <ul>
+        <h2>Select a Date to See Bookings:</h2>
+        <input type="date" id="booking-date" class="date-picker">
+        <ul id="booking-list">
             {{range .}}
-            <li>{{.StartTime}} to {{.EndTime}} </li>
-            <!-- Add more details as needed -->
+            <li data-date="{{.StartTime}}" data-start-time="{{.StartTime}}" data-end-time="{{.EndTime}}">
+                {{.StartTime}} to {{.EndTime}}
+            </li>
             {{end}}
         </ul>
     </main>
-    {{ template "footer" }}
 
+    <footer>
+        <p>&copy; 2024 Playground Booking. All rights reserved.</p>
+    </footer>
+
+    <script>
+        function formatTime(dateString) {
+            const date = new Date(dateString);
+            let hours = date.getHours();
+            const minutes = date.getMinutes();
+            const ampm = hours >= 12 ? 'pm' : 'am';
+            hours = hours % 12;
+            hours = hours ? hours : 12; // the hour '0' should be '12'
+            const minutesStr = minutes < 10 ? '0' + minutes : minutes;
+            return hours + ':' + minutesStr + ' ' + ampm;
+        }
+
+        document.getElementById('booking-date').addEventListener('change', function() {
+            const selectedDate = new Date(this.value);
+            const bookingList = document.getElementById('booking-list');
+            const bookings = bookingList.querySelectorAll('li');
+
+            bookings.forEach(booking => {
+                const bookingDate = new Date(booking.dataset.date);
+                if (bookingDate.toDateString() === selectedDate.toDateString()) {
+                    const startTime = formatTime(booking.dataset.startTime);
+                    const endTime = formatTime(booking.dataset.endTime);
+                    booking.textContent = `${startTime} to ${endTime}`;
+                    booking.style.display = 'block';
+                } else {
+                    booking.style.display = 'none';
+                }
+            });
+        });
+
+        // Set initial display to none for all bookings
+        document.addEventListener('DOMContentLoaded', () => {
+            const bookingList = document.getElementById('booking-list');
+            const bookings = bookingList.querySelectorAll('li');
+            bookings.forEach(booking => {
+                const startTime = formatTime(booking.dataset.startTime);
+                const endTime = formatTime(booking.dataset.endTime);
+                booking.textContent = `${startTime} to ${endTime}`;
+                booking.style.display = 'none';
+            });
+        });
+    </script>
 </body>
 </html>

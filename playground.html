@@ -1,64 +1,9 @@
-{{ define "header" }}
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Playground Booking</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: #f8f9fa;
-            color: #333;
-        }
-        header {
-            background-color: #007bff;
-            color: #fff;
-            padding: 20px;
-        }
-        nav ul {
-            list-style-type: none;
-            padding: 0;
-            margin: 0;
-        }
-        nav ul li {
-            display: inline;
-            margin-right: 20px;
-        }
-        nav ul li a {
-            color: #fff;
-            text-decoration: none;
-        }
-        nav ul li a:hover {
-            text-decoration: underline;
-        }
-    </style>
-</head>
-<body>
-    <header>
-        <!-- Header content goes here -->
-        <nav>
-            <ul>
-                <li><a href="/">Home</a></li>
-                <li><a href="/playgrounds">Playgrounds</a></li>
-                <!-- Add more navigation links as needed -->
-            </ul>
-        </nav>
-    </header>
-</body>
-</html>
-
-{{ end }}
-
-{{ define "footer" }}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Playground Booking</title>
+    <title>{{.Name}}</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -102,49 +47,9 @@
         }
         main {
             flex: 1; /* Allow the main content to grow to fill available space */
-        }
-        footer {
-            background-color: #343a40;
-            color: #fff;
+            max-width: 800px;
+            margin: 0 auto;
             padding: 20px;
-            text-align: center;
-            margin-top: auto; /* Push the footer to the bottom of the page */
-        }
-        footer p {
-            margin: 0;
-        }
-        footer p a {
-            color: #fff;
-            text-decoration: none;
-        }
-        footer p a:hover {
-            text-decoration: underline;
-        }
-    </style>
-</head>
-<body>
-    <footer>
-        <!-- Footer content goes here -->
-        <p>&copy; 2024 Playground Booking. All rights reserved.</p>
-    </footer>
-</body>
-</html>
-
-{{ end }}
-
-
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{.Name}}</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f4f4f4;
-            margin: 0;
-            padding: 0;
         }
         h1, p {
             text-align: center;
@@ -169,30 +74,56 @@
         .booking-button:hover {
             background-color: #0056b3;
         }
+        footer {
+            background-color: #343a40;
+            color: #fff;
+            padding: 20px;
+            text-align: center;
+            margin-top: auto; /* Push the footer to the bottom of the page */
+        }
+        footer p {
+            margin: 0;
+        }
+        footer p a {
+            color: #fff;
+            text-decoration: none;
+        }
+        footer p a:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
-    {{ template "header" }}
+    <header>
+        <nav>
+            <ul>
+                <li><a href="/">Home</a></li>
+                <li><a href="/playgrounds">Playgrounds</a></li>
+                <!-- Add more navigation links as needed -->
+            </ul>
+        </nav>
+    </header>
 
-    <h1>{{.Name}}</h1>
-    <p>Location: {{.Location}}</p>
-    <p>Size: {{.Size}}</p>
-    <p>Available Hours: {{.AvailableHours}}</p>
-    <p>Price Per Hour: ${{printf "%.2f" .PricePerHour}}</p>
-    <p>Cancellation Period: {{.CancellationPeriod}} hours</p>
-    <p>Owner ID: {{.OwnerID}}</p>
-    <p>Playground ID: {{.ID}}</p>
+    <main>
+        <h1>{{.Name}}</h1>
+        <p>Location: {{.Location}}</p>
+        <p>Size: {{.Size}}</p>
+        <p>Available Hours: {{.AvailableHours}}</p>
+        <p>Price Per Hour: ${{printf "%.2f" .PricePerHour}}</p>
+        <p>Cancellation Period: {{.CancellationPeriod}} hours</p>
+        <p>Owner ID: {{.OwnerID}}</p>
+        <p>Playground ID: {{.ID}}</p>
+        
+        <div class="button-container">
+            <a href="/booking" class="booking-button">Book Now</a>
+        </div>
+        <div class="button-container">
+            <a href="/booking/{{.ID}}" class="booking-button">Booking Status</a>
+        </div>
+    </main>
 
-    
-    <div class="button-container">
-        <a href="/booking" class="booking-button">Book Now</a>
-    </div>
-    <div class="button-container">
-        <a href="/booking/{{.ID}}" class="booking-button">Booking Status</a>
-    </div>
-
-
-    {{ template "footer" }}
-
+    <footer>
+        <p>&copy; 2024 Playground Booking. All rights reserved.</p>
+    </footer>
 </body>
 </html>

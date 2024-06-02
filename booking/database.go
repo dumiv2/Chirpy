@@ -31,6 +31,10 @@ type User struct {
 	Password string `json:"password"`
 	Expr     int    `json:"expires_in_seconds,omitempty"`
 	Token    *string `json:"token,omitempty"`
+	PreviousPasswords []string  `json:"previous_passwords"` // Array to store old passwords
+    PasswordChangedAt time.Time `json:"password_changed_at"` // Add a new field
+
+	
 }
 
 type Owner struct {
@@ -182,6 +186,7 @@ func (db *DB) GetPlaygroundByID(id int) (Playground, error) {
 	}
 	return playground, nil
 }
+
 
 // UpdatePlayground updates the specified playground in the database
 func (db *DB) UpdatePlayground(id int, updatedPlayground Playground) error {
@@ -355,19 +360,33 @@ func (db *DB) UpdateUser(userID int, email, password string) (User, error) {
         return User{}, err
     }
 
-    // Check if the user exists
     user, ok := dbStruct.Users[userID]
     if !ok {
         return User{}, errors.New("user not found")
     }
 
-    // Update user's email and password
+    // Check if the new password matches any of the previous passwords
+    for _, prevPassword := range user.PreviousPasswords {
+        err := bcrypt.CompareHashAndPassword([]byte(prevPassword), []byte(password))
+        if err == nil {
+            return User{}, errors.New("new password cannot be the same as any of the previous passwords")
+        }
+    }
+
+    // Update user's email, password, and password changed time
     user.Email = email
     securedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
     if err != nil {
         return User{}, err
     }
     user.Password = string(securedPassword)
+    user.PasswordChangedAt = time.Now() // Record the time of password change
+
+    // Store the old password in the previousPasswords array (limit to 5)
+    user.PreviousPasswords = append([]string{user.Password}, user.PreviousPasswords...)
+    if len(user.PreviousPasswords) > 5 {
+        user.PreviousPasswords = user.PreviousPasswords[:5] 
+    }
 
     // Update the user in the database structure
     dbStruct.Users[userID] = user

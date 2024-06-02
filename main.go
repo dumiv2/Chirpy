@@ -2,7 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"html/template"
+	"sync"
+	"unicode"
 
 	"io/ioutil"
 	"log"
@@ -17,6 +20,7 @@ import (
 	"github.com/golang-jwt/jwt"
 	"github.com/joho/godotenv"
 	"golang.org/x/crypto/bcrypt"
+	
 )
 
 // JWTClaims represents the claims for JWT token
@@ -83,6 +87,14 @@ func main() {
 
 
 	r.Get("/login",LoginHTMLHandler)
+	go func() {
+		for {
+			time.Sleep(15 * time.Minute)
+			loginAttemptMutex.Lock()
+			loginAttempts = make(map[string]int)
+			loginAttemptMutex.Unlock()
+		}
+	}()
 	log.Println("Server started on port 8080")
 	http.ListenAndServe(":8080", r)
 }
@@ -163,6 +175,35 @@ func LoginHTMLHandler(w http.ResponseWriter, r *http.Request) {
     renderPage(w, r, "login.html")
 
 }
+func checkPasswordComplexity(password string) error {
+    if len(password) < 8 {
+        return errors.New("Mật khẩu phải có ít nhất 8 ký tự")
+    }
+
+    hasUpper := false
+    hasLower := false
+    hasDigit := false
+    hasSpecial := false
+
+    for _, char := range password {
+        switch {
+        case unicode.IsUpper(char):
+            hasUpper = true
+        case unicode.IsLower(char):
+            hasLower = true
+        case unicode.IsDigit(char):
+            hasDigit = true
+        case unicode.IsPunct(char) || unicode.IsSymbol(char):
+            hasSpecial = true
+        }
+    }
+
+    if !hasUpper || !hasLower || !hasDigit || !hasSpecial {
+        return errors.New("Mật khẩu phải chứa ít nhất một chữ hoa, một chữ thường, một số và một ký tự đặc biệt")
+    }
+
+    return nil
+}
 
 func RegisterOwnerHandler(db *booking.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -185,6 +226,12 @@ func RegisterOwnerHandler(db *booking.DB) http.HandlerFunc {
 		if name == "" || email == "" || password == "" {
 			http.Error(w, "Name, email, and password are required", http.StatusBadRequest)
 			log.Println("Name, email, and password are required")
+			return
+		}
+
+		// Kiểm tra độ phức tạp mật khẩu
+		if err := checkPasswordComplexity(password); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -243,6 +290,12 @@ func RegisterUserHandler(db *booking.DB) http.HandlerFunc {
 		if email == "" || password == "" {
 			http.Error(w, "Email and password are required", http.StatusBadRequest)
 			log.Println("Email and password are required")
+			return
+		}
+
+		// Kiểm tra độ phức tạp mật khẩu
+		if err := checkPasswordComplexity(password); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -399,6 +452,9 @@ func GetPlaygroundHandler(db *booking.DB) http.HandlerFunc {
 	}
 }
 
+var loginAttempts = make(map[string]int)
+var loginAttemptMutex sync.Mutex
+
 
 func UserLoginHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
     return func(w http.ResponseWriter, r *http.Request) {
@@ -414,6 +470,17 @@ func UserLoginHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
         email := r.FormValue("email")
 		log.Println(email)
         password := r.FormValue("password")
+
+		// Rate limiting
+        loginAttemptMutex.Lock()
+        loginAttempts[email]++
+        attempts := loginAttempts[email]
+        loginAttemptMutex.Unlock()
+
+        if attempts > 5 {
+            http.Error(w, "Quá nhiều lần đăng nhập thất bại. Vui lòng thử lại sau 15 phút.", http.StatusTooManyRequests)
+            return
+        }
 
         // Retrieve user from the database using the provided email
         user, err := db.GetUserByEmail(email)
@@ -431,8 +498,8 @@ func UserLoginHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
             return
         }
 
-        // Calculate token expiration time
-        expiresAt := time.Now().UTC().Add(24 * time.Hour) // Default expiration time: 24 hours
+        // Calculate token expiration time (15 minutes)
+        expiresAt := time.Now().UTC().Add(15 * time.Minute)
 
         // Create JWT token
         token := jwt.NewWithClaims(jwt.SigningMethodHS256, JWTClaims{
@@ -456,9 +523,14 @@ func UserLoginHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 		http.SetCookie(w, &http.Cookie{
 			Name:    "token",
 			Value:   tokenString,
-			Expires: expiresAt,	Path: "/", MaxAge: 86400, HttpOnly: true, Secure: true,
+			Expires: expiresAt,	Path: "/", MaxAge: 86400, HttpOnly: true, Secure: true,SameSite: http.SameSiteStrictMode,
 
 		})
+
+		// If login is successful, reset the attempt counter
+		loginAttemptMutex.Lock()
+		delete(loginAttempts, email)
+		loginAttemptMutex.Unlock()
 
         http.Redirect(w, r, "/", http.StatusSeeOther)
     }
@@ -467,25 +539,37 @@ func UserLoginHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 
 	
 func OwnerLoginHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// Parse form data from the request
-		err := r.ParseForm()
-		if err != nil {
-			http.Error(w, "Failed to parse form data", http.StatusBadRequest)
-			log.Println("Failed to parse form data:", err)
-			return
-		}
+    return func(w http.ResponseWriter, r *http.Request) {
+        err := r.ParseForm()
+        if err != nil {
+            http.Error(w, "Failed to parse form data", http.StatusBadRequest)
+            log.Println("Failed to parse form data:", err)
+            return
+        }
 
-		// Extract login information from the form
-		email := r.FormValue("email")
-		password := r.FormValue("password")
+        // Extract login information from the form
+        email := r.FormValue("email")
+        password := r.FormValue("password")
 
-		owner, err := db.GetOwnerByEmail(email)
-		if err != nil {
-			http.Error(w, "Owner not found", http.StatusUnauthorized)
-			log.Println("Owner not found:", err)
-			return
-		}
+        // --- START OF RATE LIMITING ---
+        loginAttemptMutex.Lock()
+        loginAttempts[email]++
+        attempts := loginAttempts[email]
+        loginAttemptMutex.Unlock()
+
+        if attempts > 5 {
+            http.Error(w, "Quá nhiều lần đăng nhập thất bại. Vui lòng thử lại sau 15 phút.", http.StatusTooManyRequests)
+            return
+        }
+        // --- END OF RATE LIMITING ---
+
+        owner, err := db.GetOwnerByEmail(email)
+        if err != nil {
+            http.Error(w, "Owner not found", http.StatusUnauthorized)
+            log.Println("Owner not found:", err)
+            return
+        }
+
 
 		err = bcrypt.CompareHashAndPassword([]byte(owner.Password), []byte(password))
 		if err != nil {
@@ -494,8 +578,8 @@ func OwnerLoginHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 			return
 		}
 
-		// Calculate token expiration time
-		expiresAt := time.Now().UTC().Add(24 * time.Hour) // Default expiration time: 24 hours
+        // Calculate token expiration time (15 minutes)
+        expiresAt := time.Now().UTC().Add(15 * time.Minute)
 
 		// Create JWT token
 		token := jwt.NewWithClaims(jwt.SigningMethodHS256, OwnerJWTClaims{
@@ -521,7 +605,7 @@ func OwnerLoginHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 			Name:    "token",
 			Value:   tokenString,
 			Expires: expiresAt,
-			Path: "/", MaxAge: 86400, HttpOnly: true, Secure: true,
+			Path: "/", MaxAge: 86400, HttpOnly: true, Secure: true,SameSite: http.SameSiteStrictMode,
 		})
 
         http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -569,7 +653,11 @@ func UpdateUserHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 			http.Error(w, "Invalid request body", http.StatusBadRequest)
 			return
 		}
-
+		// Check password complexity (if you want to enforce it on updates)
+		if err := checkPasswordComplexity(updateParams.Password); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		// Update the user in the database
 		updatedUser, err := db.UpdateUser(claims.UserID, updateParams.Email, updateParams.Password)
 		if err != nil {

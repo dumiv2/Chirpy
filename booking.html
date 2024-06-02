@@ -51,17 +51,62 @@
         }
     </style>
 </head>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Book Playground</title>
+    <link rel="stylesheet" href="styles.css"> <!-- Include your CSS file -->
+</head>
 <body>
     <h2>Book Playground</h2>
     <form name="booking" method="POST" action="/booking">
-        <label for="start_time">Start Time:</label>
-        <input type="text" id="start_time" name="start_time" placeholder="YYYY-MM-DDTHH:MM" required><br>        
+        <label for="date">Select Date:</label>
+        <input type="date" id="date" name="date" required><br>
+        
+        <label for="start_time">Select Start Time:</label>
+        <div class="time-slots">
+            <button type="button" class="time-slot" onclick="selectTime('05:00')">5:00 AM</button>
+            <button type="button" class="time-slot" onclick="selectTime('07:00')">7:00 AM</button>
+            <button type="button" class="time-slot" onclick="selectTime('09:00')">9:00 AM</button>
+            <button type="button" class="time-slot" onclick="selectTime('16:00')">4:00 PM</button>
+            <button type="button" class="time-slot" onclick="selectTime('18:00')">6:00 PM</button>
+            <button type="button" class="time-slot" onclick="selectTime('20:00')">8:00 PM</button>
+            <button type="button" class="time-slot" onclick="selectTime('10:00')">10:00 AM</button>
+        </div>
+        
+        <input type="hidden" id="start_time" name="start_time" required><br>
+        
         <label for="duration">Duration (hours):</label>
-        <input type="number" id="duration" name="duration" required><!-- Assuming you'll pass the duration from the server side -->
-        <input type="hidden" id="user_id" name="user_id" value="{{ .UserID }}"><!-- Assuming you'll pass the UserID from the server side -->
+        <input type="number" id="duration" name="duration" required>
+        
+        <input type="hidden" id="user_id" name="user_id" value="{{ .UserID }}">
+        
         <label for="playground_id">Playground ID:</label>
-        <input type="number" id="playground_id" name="playground_id" required><!-- Assuming you'll pass the PlaygroundID from the server side -->
+        <input type="number" id="playground_id" name="playground_id" required>
+        
         <button type="submit">Book</button>
     </form>
+
+    <script>
+        let selectedTime = '';
+
+        function selectTime(time) {
+            selectedTime = time;
+            const date = document.getElementById('date').value;
+            if (!date) {
+                alert('Please select a date first.');
+                return;
+            }
+            const formattedTime = date + 'T' + time;
+            document.getElementById('start_time').value = formattedTime;
+            const timeSlots = document.querySelectorAll('.time-slot');
+            timeSlots.forEach(slot => {
+                slot.classList.remove('selected');
+                if (slot.textContent === time) {
+                    slot.classList.add('selected');
+                }
+            });
+        }
+    </script>
 </body>
 </html>
