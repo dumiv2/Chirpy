@@ -1,72 +1,162 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Register Playground</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f4f4f4;
-            margin: 0;
-            padding: 0;
-        }
-        h2 {
-            text-align: center;
-            margin-top: 30px;
-        }
-        form {
-            max-width: 400px;
-            margin: 20px auto;
-            padding: 20px;
-            background-color: #fff;
-            border-radius: 8px;
-            box-shadow: 0 0 8px rgba(0, 0, 0, 0.1);
-        }
-        label {
-            display: block;
-            margin-bottom: 5px;
-            color: #333;
-        }
-        input[type="text"],
-        input[type="number"] {
-            width: 100%;
-            padding: 10px;
-            margin-bottom: 10px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            box-sizing: border-box;
-        }
-        button[type="submit"] {
-            width: 100%;
-            padding: 10px;
-            background-color: #007bff;
-            color: #fff;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-        }
-        button[type="submit"]:hover {
-            background-color: #0056b3;
-        }
-    </style>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Register Playground</title>
+        <!-- Favicon-->
+        <link rel="icon" type="image/x-icon" href="assets/favicon.ico" />
+        <!-- Bootstrap icons-->
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.5.0/font/bootstrap-icons.css" rel="stylesheet" />
+        <!-- Core theme CSS (includes Bootstrap)-->
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.1/dist/css/bootstrap.min.css" rel="stylesheet" />
+        <!-- Custom styles for this template-->
+        <link href="css/styles.css" rel="stylesheet" />
+        <style>
+                    .form-container {
+                max-width: 400px;
+                margin: auto;
+                background-color: #fff;
+                border-radius: 8px;
+                box-shadow: 0 0 8px rgba(0, 0, 0, 0.1);
+                padding: 20px;
+            }
+            .form-container label {
+                color: #333;
+                margin-bottom: 5px;
+                display: block;
+            }
+            body {
+                font-family: Arial, sans-serif;
+                background-color: #f8f9fa;
+                margin: 0;
+                padding: 0;
+            }
+            .container {
+                margin-top: 20px;
+            }
+            .container1 {
+                max-width: 400px;
+                margin: 100px auto;
+                padding: 20px;
+                background-color: #fff;
+                border-radius: 10px;
+                box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+                text-align: center;
+            }
+            h2 {
+                color: #333;
+            }
+            label {
+                display: block;
+                margin-bottom: 5px;
+                color: #555;
+            }
+            input[type="text"],
+            input[type="number"]
+
+ {
+                width: 100%;
+                padding: 10px;
+                margin-bottom: 10px;
+                border: 1px solid #ccc;
+                border-radius: 5px;
+                box-sizing: border-box;
+            }
+
+            button[type="submit"] {
+                padding: 10px 20px;
+                background-color: #007bff;
+                color: #fff;
+                border: none;
+                border-radius: 5px;
+                cursor: pointer;
+            }
+            button[type="submit"]:hover {
+                background-color: #0056b3;
+            }
+            .register-link {
+                margin-top: 10px;
+                color: #007bff;
+                text-decoration: none;
+                font-weight: bold;
+            }
+            .register-link:hover {
+                text-decoration: underline;
+            }
+            .time-container {
+    display: flex; /* Arrange inputs side-by-side */
+    align-items: center; /* Vertically align labels and inputs */
+}
+
+.time-container label {
+    margin-right: 10px; /* Add spacing between labels and inputs */
+}
+
+.time-container input[type="time"] {
+    width: 120px; /* Adjust width as needed */
+}
+        </style>
 </head>
 <body>
-    <h2>Register Playground</h2>
-    <form name="register/playground" method="POST" action="/register/playground">
-        <label for="name">Name:</label>
-        <input type="text" id="name" name="name" required><br>
-        <label for="location">Location:</label>
-        <input type="text" id="location" name="location" required><br>
-        <label for="size">Size:</label>
-        <input type="text" id="size" name="size" required><br>
-        <label for="available_hours">Available Hours:</label>
-        <input type="text" id="available_hours" name="available_hours" required><br>
-        <label for="price_per_hour">Price Per Hour:</label>
-        <input type="number" id="price_per_hour" name="price_per_hour" step="0.01" required><br>
-        <label for="cancellation_period">Cancellation Period (hours):</label>
-        <input type="number" id="cancellation_period" name="cancellation_period" min="0" required><br>
-        <button type="submit">Register</button>
-    </form>
+    <header class="bg-dark py-5">
+        <div class="container px-4 px-lg-5 my-5">
+            <div class="text-center text-white">
+                <h1 class="display-4 fw-bolder">Register Playground</h1>
+            </div>
+        </div>
+    </header>
+    <div class="container1">
+        <h2>Register Playground</h2>
+        <form name="register/playground" method="POST" action="/register/playground">
+            <label for="name">Name:</label>
+            <input type="text" id="name" name="name" required><br>
+            <label for="location">Location:</label>
+            <input type="text" id="location" name="location" required><br>
+            <label for="size">Size (Person):</label>
+            <input type="text" id="size" name="size" required><br>
+        
+            <label for="available_hours">Available Hours:</label>
+            <div class="time-container">
+                <label for="start_time">Start Time:</label>
+                <input type="time" id="start_time" name="start_time" required>
+                <label for="end_time">End Time:</label>
+                <input type="time" id="end_time" name="end_time" required>
+            </div><br>
+            <input type="hidden" id="available_hours" name="available_hours">
+            <label for="price_per_hour">Price Per Hour (USD):</label>
+            <input type="number" id="price_per_hour" name="price_per_hour" min="0" step="1" required><br>
+            <label for="cancellation_period">Cancellation Period (hours):</label>
+            <input type="number" id="cancellation_period" name="cancellation_period" min="0" required><br>
+            <button type="submit">Register</button>
+        </form>
+    </div>
+    <script>
+const startTimeInput = document.getElementById('start_time');
+const endTimeInput = document.getElementById('end_time');
+const availableHoursInput = document.getElementById('available_hours');
+
+function updateAvailableHours() {
+    let startTime = startTimeInput.value;
+    let endTime = endTimeInput.value;
+
+    // Convert 24-hour format to 12-hour format with AM/PM
+    startTime = formatTimeWithAMPM(startTime);
+    endTime = formatTimeWithAMPM(endTime);
+
+    availableHoursInput.value = `${startTime} - ${endTime}`;
+}
+
+function formatTimeWithAMPM(time) {
+    const [hours, minutes] = time.split(':');
+    let hours12 = parseInt(hours, 10) % 12 || 12;  // Convert to 12-hour format
+    const ampm = parseInt(hours, 10) >= 12 ? 'PM' : 'AM';
+    return `${hours12}:${minutes} ${ampm}`;
+}
+
+// Attach event listeners to update availableHoursInput
+startTimeInput.addEventListener('change', updateAvailableHours);
+endTimeInput.addEventListener('change', updateAvailableHours);
+    </script>
 </body>
 </html>

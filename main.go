@@ -20,7 +20,6 @@ import (
 	"github.com/golang-jwt/jwt"
 	"github.com/joho/godotenv"
 	"golang.org/x/crypto/bcrypt"
-	
 )
 
 // JWTClaims represents the claims for JWT token
@@ -61,32 +60,31 @@ func main() {
 	}
 
 	r := chi.NewRouter()
-	r.Get("/",MainHTMLHandler)
 
 	r.Post("/register_owner", RegisterOwnerHandler(db))
 	r.Get("/register_owner", RegisterOwnerHTMLHandler)
-	r.Get("/login/owner",OwnerLoginHTMLHandler)
-	r.Post("/login/owner", OwnerLoginHandler(db,apiCfg))
+	r.Get("/login/owner", OwnerLoginHTMLHandler)
+	r.Post("/login/owner", OwnerLoginHandler(db, apiCfg))
 
-	r.Post("/register/playground", RegisterPlaygroundHandler(db,apiCfg))
+	r.Post("/register/playground", RegisterPlaygroundHandler(db, apiCfg))
 	r.Get("/register/playground", ResPlayHTMLHandler)
-	r.Get("/playgrounds", GetPlaygroundsHandler(db))
+	r.Get("/", GetPlaygroundsHandler(db))
 	r.Get("/playgrounds/{id}", GetPlaygroundHandler(db))
 	//r.Delete("/playgrounds/{id}", DeletePlaygroundHandler(db, apiCfg))
 
-
 	r.Post("/register_user", RegisterUserHandler(db))
 	r.Get("/register_user", RegisterUserHTMLHandler)
-	r.Get("/login/user",LoginUserHTMLHandler)
+	r.Get("/login/user", LoginUserHTMLHandler)
 	r.Post("/login/user", UserLoginHandler(db, apiCfg))
 	//r.Put("/users",UpdateUserHandler(db,apiCfg))
 
 	r.Post("/booking", BookPlaygroundHandler(db, apiCfg))
-	r.Get("/booking",BookingHTMLHandler)
+	r.Get("/booking", BookingHTMLHandler)
 	r.Get("/booking/{playgroundid}", GetBookingsForPlaygroundHandler(db))
 
-
-	r.Get("/login",LoginHTMLHandler)
+	r.Get("/login", LoginHTMLHandler)
+	r.Get("/success", SuccessHTMLHandler)
+	
 	go func() {
 		for {
 			time.Sleep(15 * time.Minute)
@@ -98,111 +96,171 @@ func main() {
 	log.Println("Server started on port 8080")
 	http.ListenAndServe(":8080", r)
 }
+
 // Define a function to render the page with header and footer templates
 func renderPage(w http.ResponseWriter, r *http.Request, content string) {
-    headerTemplate, err := ioutil.ReadFile("header.html")
-    if err != nil {
-        http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-        log.Println("Failed to read header HTML file:", err)
-        return
-    }
+	headerTemplate, err := ioutil.ReadFile("header.html")
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		log.Println("Failed to read header HTML file:", err)
+		return
+	}
 
-    footerTemplate, err := ioutil.ReadFile("footer.html")
-    if err != nil {
-        http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-        log.Println("Failed to read footer HTML file:", err)
-        return
-    }
+	footerTemplate, err := ioutil.ReadFile("footer.html")
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		log.Println("Failed to read footer HTML file:", err)
+		return
+	}
 
 	contentTemplate, err := ioutil.ReadFile(content)
-    if err != nil {
-        http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-        log.Println("Failed to read footer HTML file:", err)
-        return
-    }
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		log.Println("Failed to read footer HTML file:", err)
+		return
+	}
 
-    w.Header().Set("Content-Type", "text/html")
+	w.Header().Set("Content-Type", "text/html")
 
-    // Write header template
-    if _, err := w.Write(headerTemplate); err != nil {
-        log.Println("Failed to write header template:", err)
-        return
-    }
+	// Write header template
+	if _, err := w.Write(headerTemplate); err != nil {
+		log.Println("Failed to write header template:", err)
+		return
+	}
 
-    // Write content
-    if _, err := w.Write(contentTemplate); err != nil {
-        log.Println("Failed to write content:", err)
-        return
-    }
+	// Write content
+	if _, err := w.Write(contentTemplate); err != nil {
+		log.Println("Failed to write content:", err)
+		return
+	}
 
-    // Write footer template
-    if _, err := w.Write(footerTemplate); err != nil {
-        log.Println("Failed to write footer template:", err)
-        return
-    }
+	// Write footer template
+	if _, err := w.Write(footerTemplate); err != nil {
+		log.Println("Failed to write footer template:", err)
+		return
+	}
 }
 
 func BookingHTMLHandler(w http.ResponseWriter, r *http.Request) {
-    // Read the HTML file
-    renderPage(w, r, "booking.html")
+	// Read the HTML file
+	renderPage(w, r, "booking.html")
 
 }
+
+func SuccessHTMLHandler(w http.ResponseWriter, r *http.Request) {
+    messageType := r.URL.Query().Get("messageType")
+    continueURL := "/" // Default redirect URL (adjust as needed)
+
+    // Data to be passed to the template
+    data := struct {
+        Message     string
+        ContinueURL string
+    }{}
+
+    switch messageType {
+    case "userRegister":
+        data.Message = "Congratulations, your account has been successfully created."
+        data.ContinueURL = "/" 
+    case "playgroundRegister":
+        data.Message = "Your playground has been successfully registered."
+        data.ContinueURL = "/" 
+    case "bookingSuccess":
+        data.Message = "Your booking was successful!"
+        data.ContinueURL = "/" 
+	case "loginSuccess":
+        data.Message = "Your login was successful!"
+        data.ContinueURL = "/" 
+
+    default:
+        data.Message = "Success!"
+		data.ContinueURL = continueURL
+    }
+
+    // Parse and execute the success.html template
+    tmpl, err := template.ParseFiles("success.html")
+    if err != nil {
+        http.Error(w, "Failed to parse HTML template: "+err.Error(), http.StatusInternalServerError)
+        return
+    }
+
+    err = tmpl.Execute(w, data)
+    if err != nil {
+        http.Error(w, "Failed to execute HTML template: "+err.Error(), http.StatusInternalServerError)
+        return
+    }
+}
+
 func OwnerLoginHTMLHandler(w http.ResponseWriter, r *http.Request) {
-    // Read the HTML file
-    renderPage(w, r, "login_owner.html")
+	// Read the HTML file
+	renderPage(w, r, "login_owner.html")
 }
 
 // Update your handlers to use the renderPage function
-func MainHTMLHandler(w http.ResponseWriter, r *http.Request) {
-    // Define the content specific to the main page
+func MainHTMLHandler(db *booking.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		playgrounds, err := db.GetAllPlaygrounds()
+		if err != nil {
+			http.Error(w, "Failed to get playgrounds: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 
+		tmpl, err := template.ParseFiles("main.html")
+		if err != nil {
+			http.Error(w, "Failed to parse HTML template: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 
-    renderPage(w, r, "main.html")
+		err = tmpl.Execute(w, playgrounds)
+		if err != nil {
+			http.Error(w, "Failed to execute HTML template: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
 }
 func ResPlayHTMLHandler(w http.ResponseWriter, r *http.Request) {
-    // Read the HTML file
-    renderPage(w, r, "res_playground.html")
+	// Read the HTML file
+	renderPage(w, r, "res_playground.html")
 
 }
 func LoginUserHTMLHandler(w http.ResponseWriter, r *http.Request) {
-    // Read the HTML file
-    renderPage(w, r, "login_user.html")
+	// Read the HTML file
+	renderPage(w, r, "login_user.html")
 
 }
 
 func LoginHTMLHandler(w http.ResponseWriter, r *http.Request) {
 
-    renderPage(w, r, "login.html")
+	renderPage(w, r, "login.html")
 
 }
 func checkPasswordComplexity(password string) error {
-    if len(password) < 8 {
-        return errors.New("Mật khẩu phải có ít nhất 8 ký tự")
-    }
+	if len(password) < 8 {
+		return errors.New("Mật khẩu phải có ít nhất 8 ký tự")
+	}
 
-    hasUpper := false
-    hasLower := false
-    hasDigit := false
-    hasSpecial := false
+	hasUpper := false
+	hasLower := false
+	hasDigit := false
+	hasSpecial := false
 
-    for _, char := range password {
-        switch {
-        case unicode.IsUpper(char):
-            hasUpper = true
-        case unicode.IsLower(char):
-            hasLower = true
-        case unicode.IsDigit(char):
-            hasDigit = true
-        case unicode.IsPunct(char) || unicode.IsSymbol(char):
-            hasSpecial = true
-        }
-    }
+	for _, char := range password {
+		switch {
+		case unicode.IsUpper(char):
+			hasUpper = true
+		case unicode.IsLower(char):
+			hasLower = true
+		case unicode.IsDigit(char):
+			hasDigit = true
+		case unicode.IsPunct(char) || unicode.IsSymbol(char):
+			hasSpecial = true
+		}
+	}
 
-    if !hasUpper || !hasLower || !hasDigit || !hasSpecial {
-        return errors.New("Mật khẩu phải chứa ít nhất một chữ hoa, một chữ thường, một số và một ký tự đặc biệt")
-    }
+	if !hasUpper || !hasLower || !hasDigit || !hasSpecial {
+		return errors.New("Mật khẩu phải chứa ít nhất một chữ hoa, một chữ thường, một số và một ký tự đặc biệt")
+	}
 
-    return nil
+	return nil
 }
 
 func RegisterOwnerHandler(db *booking.DB) http.HandlerFunc {
@@ -252,25 +310,21 @@ func RegisterOwnerHandler(db *booking.DB) http.HandlerFunc {
 		}
 
 		// Redirect the user to a success page or perform any other action
-		http.Redirect(w, r, "/registration-successful.html", http.StatusSeeOther)
+		http.Redirect(w, r, "/success?messageType=userRegister", http.StatusSeeOther)
 	}
 }
 
-
-
 func RegisterUserHTMLHandler(w http.ResponseWriter, r *http.Request) {
-    // Read the HTML file
-    renderPage(w, r, "register_user.html")
+	// Read the HTML file
+	renderPage(w, r, "register_user.html")
 
 }
 func RegisterOwnerHTMLHandler(w http.ResponseWriter, r *http.Request) {
-    // Read the HTML file
+	// Read the HTML file
 
-    renderPage(w, r, "register_owner.html")
+	renderPage(w, r, "register_owner.html")
 
 }
-
-
 
 func RegisterUserHandler(db *booking.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -314,10 +368,10 @@ func RegisterUserHandler(db *booking.DB) http.HandlerFunc {
 			return
 		}
 
-		w.WriteHeader(http.StatusCreated)
+		http.Redirect(w, r, "/success?messageType=userRegister", http.StatusSeeOther)
+
 	}
 }
-
 
 func RegisterPlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -379,27 +433,27 @@ func RegisterPlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 		availableHours := r.FormValue("available_hours")
 		cancellation_period := r.FormValue("cancellation_period")
 		price_per_hour := r.FormValue("price_per_hour")
-		price_per_hour_float ,_ := strconv.ParseFloat(strings.TrimSpace(price_per_hour), 64)
-		cancellation_period_int,_  := strconv.Atoi(cancellation_period)
+		price_per_hour_float, _ := strconv.ParseFloat(strings.TrimSpace(price_per_hour), 64)
+		cancellation_period_int, _ := strconv.Atoi(cancellation_period)
 		// Create the playground
 		_, err = db.CreatePlayground(ownerID, booking.Playground{
-			Name:        name,
-			Location:    location,
-			Size:      size,
-			AvailableHours: availableHours,
+			Name:               name,
+			Location:           location,
+			Size:               size,
+			AvailableHours:     availableHours,
 			CancellationPeriod: cancellation_period_int,
-			PricePerHour: price_per_hour_float,
-			OwnerID: ownerID,
+			PricePerHour:       price_per_hour_float,
+			OwnerID:            ownerID,
 		})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		w.WriteHeader(http.StatusCreated)
+		http.Redirect(w, r, "/success?messageType=playgroundRegister", http.StatusSeeOther)
+		
 	}
 }
-
 
 func GetPlaygroundsHandler(db *booking.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -455,76 +509,74 @@ func GetPlaygroundHandler(db *booking.DB) http.HandlerFunc {
 var loginAttempts = make(map[string]int)
 var loginAttemptMutex sync.Mutex
 
-
 func UserLoginHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
-    return func(w http.ResponseWriter, r *http.Request) {
-        // Parse form data from the request
-        err := r.ParseForm()
-        if err != nil {
-            http.Error(w, "Failed to parse form data", http.StatusBadRequest)
-            log.Println("Failed to parse form data:", err)
-            return
-        }
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Parse form data from the request
+		err := r.ParseForm()
+		if err != nil {
+			http.Error(w, "Failed to parse form data", http.StatusBadRequest)
+			log.Println("Failed to parse form data:", err)
+			return
+		}
 
-        // Extract login information from the form
-        email := r.FormValue("email")
+		// Extract login information from the form
+		email := r.FormValue("email")
 		log.Println(email)
-        password := r.FormValue("password")
+		password := r.FormValue("password")
 
 		// Rate limiting
-        loginAttemptMutex.Lock()
-        loginAttempts[email]++
-        attempts := loginAttempts[email]
-        loginAttemptMutex.Unlock()
+		loginAttemptMutex.Lock()
+		loginAttempts[email]++
+		attempts := loginAttempts[email]
+		loginAttemptMutex.Unlock()
 
-        if attempts > 5 {
-            http.Error(w, "Quá nhiều lần đăng nhập thất bại. Vui lòng thử lại sau 15 phút.", http.StatusTooManyRequests)
-            return
-        }
+		if attempts > 5 {
+			http.Error(w, "Quá nhiều lần đăng nhập thất bại. Vui lòng thử lại sau 15 phút.", http.StatusTooManyRequests)
+			return
+		}
 
-        // Retrieve user from the database using the provided email
-        user, err := db.GetUserByEmail(email)
-        if err != nil {
-            http.Error(w, "Invalid email or password", http.StatusUnauthorized)
-            log.Println("Invalid email or password:", err)
-            return
-        }
+		// Retrieve user from the database using the provided email
+		user, err := db.GetUserByEmail(email)
+		if err != nil {
+			http.Error(w, "Invalid email or password", http.StatusUnauthorized)
+			log.Println("Invalid email or password:", err)
+			return
+		}
 
-        // Compare the provided password with the stored password hash
-        err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password))
-        if err != nil {
-            http.Error(w, "Invalid email or password", http.StatusUnauthorized)
-            log.Println("Invalid email or password:", err)
-            return
-        }
+		// Compare the provided password with the stored password hash
+		err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password))
+		if err != nil {
+			http.Error(w, "Invalid email or password", http.StatusUnauthorized)
+			log.Println("Invalid email or password:", err)
+			return
+		}
 
-        // Calculate token expiration time (15 minutes)
-        expiresAt := time.Now().UTC().Add(15 * time.Minute)
+		// Calculate token expiration time (15 minutes)
+		expiresAt := time.Now().UTC().Add(15 * time.Minute)
 
-        // Create JWT token
-        token := jwt.NewWithClaims(jwt.SigningMethodHS256, JWTClaims{
-            UserID: user.ID,
-            Email:  user.Email,
-            StandardClaims: jwt.StandardClaims{
-                Issuer:    "chirpy",
-                IssuedAt:  time.Now().UTC().Unix(),
-                ExpiresAt: expiresAt.Unix(),
-            },
-        })
+		// Create JWT token
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, JWTClaims{
+			UserID: user.ID,
+			Email:  user.Email,
+			StandardClaims: jwt.StandardClaims{
+				Issuer:    "chirpy",
+				IssuedAt:  time.Now().UTC().Unix(),
+				ExpiresAt: expiresAt.Unix(),
+			},
+		})
 
-        // Sign the token with the JWT secret
-        tokenString, err := token.SignedString([]byte(cfg.jwtSecret))
-        if err != nil {
-            http.Error(w, "Failed to generate token", http.StatusInternalServerError)
-            return
-        }
+		// Sign the token with the JWT secret
+		tokenString, err := token.SignedString([]byte(cfg.jwtSecret))
+		if err != nil {
+			http.Error(w, "Failed to generate token", http.StatusInternalServerError)
+			return
+		}
 
 		// Set the token as a cookie in the HTTP response
 		http.SetCookie(w, &http.Cookie{
 			Name:    "token",
 			Value:   tokenString,
-			Expires: expiresAt,	Path: "/", MaxAge: 86400, HttpOnly: true, Secure: true,SameSite: http.SameSiteStrictMode,
-
+			Expires: expiresAt, Path: "/", MaxAge: 86400, HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode,
 		})
 
 		// If login is successful, reset the attempt counter
@@ -532,44 +584,42 @@ func UserLoginHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 		delete(loginAttempts, email)
 		loginAttemptMutex.Unlock()
 
-        http.Redirect(w, r, "/", http.StatusSeeOther)
-    }
+		http.Redirect(w, r, "/success?messageType=loginSuccess", http.StatusSeeOther)
+
+	}
 }
 
-
-	
 func OwnerLoginHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
-    return func(w http.ResponseWriter, r *http.Request) {
-        err := r.ParseForm()
-        if err != nil {
-            http.Error(w, "Failed to parse form data", http.StatusBadRequest)
-            log.Println("Failed to parse form data:", err)
-            return
-        }
+	return func(w http.ResponseWriter, r *http.Request) {
+		err := r.ParseForm()
+		if err != nil {
+			http.Error(w, "Failed to parse form data", http.StatusBadRequest)
+			log.Println("Failed to parse form data:", err)
+			return
+		}
 
-        // Extract login information from the form
-        email := r.FormValue("email")
-        password := r.FormValue("password")
+		// Extract login information from the form
+		email := r.FormValue("email")
+		password := r.FormValue("password")
 
-        // --- START OF RATE LIMITING ---
-        loginAttemptMutex.Lock()
-        loginAttempts[email]++
-        attempts := loginAttempts[email]
-        loginAttemptMutex.Unlock()
+		// --- START OF RATE LIMITING ---
+		loginAttemptMutex.Lock()
+		loginAttempts[email]++
+		attempts := loginAttempts[email]
+		loginAttemptMutex.Unlock()
 
-        if attempts > 5 {
-            http.Error(w, "Quá nhiều lần đăng nhập thất bại. Vui lòng thử lại sau 15 phút.", http.StatusTooManyRequests)
-            return
-        }
-        // --- END OF RATE LIMITING ---
+		if attempts > 5 {
+			http.Error(w, "Quá nhiều lần đăng nhập thất bại. Vui lòng thử lại sau 15 phút.", http.StatusTooManyRequests)
+			return
+		}
+		// --- END OF RATE LIMITING ---
 
-        owner, err := db.GetOwnerByEmail(email)
-        if err != nil {
-            http.Error(w, "Owner not found", http.StatusUnauthorized)
-            log.Println("Owner not found:", err)
-            return
-        }
-
+		owner, err := db.GetOwnerByEmail(email)
+		if err != nil {
+			http.Error(w, "Owner not found", http.StatusUnauthorized)
+			log.Println("Owner not found:", err)
+			return
+		}
 
 		err = bcrypt.CompareHashAndPassword([]byte(owner.Password), []byte(password))
 		if err != nil {
@@ -578,8 +628,8 @@ func OwnerLoginHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 			return
 		}
 
-        // Calculate token expiration time (15 minutes)
-        expiresAt := time.Now().UTC().Add(15 * time.Minute)
+		// Calculate token expiration time (15 minutes)
+		expiresAt := time.Now().UTC().Add(15 * time.Minute)
 
 		// Create JWT token
 		token := jwt.NewWithClaims(jwt.SigningMethodHS256, OwnerJWTClaims{
@@ -605,13 +655,12 @@ func OwnerLoginHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 			Name:    "token",
 			Value:   tokenString,
 			Expires: expiresAt,
-			Path: "/", MaxAge: 86400, HttpOnly: true, Secure: true,SameSite: http.SameSiteStrictMode,
+			Path:    "/", MaxAge: 86400, HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode,
 		})
 
-        http.Redirect(w, r, "/", http.StatusSeeOther)
+		http.Redirect(w, r, "/success?messageType=loginSuccess", http.StatusSeeOther)
 	}
 }
-
 
 func UpdateUserHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -848,29 +897,28 @@ func BookPlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 			return
 		}
 
-		w.WriteHeader(http.StatusCreated)
+		http.Redirect(w, r, "/success?messageType=bookingSuccess", http.StatusSeeOther)
 	}
 }
 
-
 func GetBookingsForPlaygroundHandler(db *booking.DB) http.HandlerFunc {
-    return func(w http.ResponseWriter, r *http.Request) {
-        // Extract the playground ID from the URL parameters
-        playgroundIDStr := chi.URLParam(r, "playgroundid")
-        playgroundID, err := strconv.Atoi(playgroundIDStr)
-        if err != nil {
-            http.Error(w, "Invalid playground ID", http.StatusBadRequest)
-            log.Println("Invalid playground ID:", err)
-            return
-        }
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Extract the playground ID from the URL parameters
+		playgroundIDStr := chi.URLParam(r, "playgroundid")
+		playgroundID, err := strconv.Atoi(playgroundIDStr)
+		if err != nil {
+			http.Error(w, "Invalid playground ID", http.StatusBadRequest)
+			log.Println("Invalid playground ID:", err)
+			return
+		}
 
-        // Retrieve all bookings for the specified playground
-        bookings, err := db.GetBookingsForPlayground(playgroundID)
-        if err != nil {
-            http.Error(w, "Failed to get bookings for playground: "+err.Error(), http.StatusInternalServerError)
-            log.Println("Failed to get bookings for playground:", err)
-            return
-        }
+		// Retrieve all bookings for the specified playground
+		bookings, err := db.GetBookingsForPlayground(playgroundID)
+		if err != nil {
+			http.Error(w, "Failed to get bookings for playground: "+err.Error(), http.StatusInternalServerError)
+			log.Println("Failed to get bookings for playground:", err)
+			return
+		}
 
 		tmpl, err := template.ParseFiles("booking_play.html")
 		if err != nil {
@@ -883,5 +931,5 @@ func GetBookingsForPlaygroundHandler(db *booking.DB) http.HandlerFunc {
 			http.Error(w, "Failed to execute HTML template: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-    }
+	}
 }
