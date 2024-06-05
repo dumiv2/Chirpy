@@ -3,14 +3,15 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html/template"
 	"sync"
 	"unicode"
-	
 
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/smtp"
 	"os"
 	"strconv"
 	"strings"
@@ -87,7 +88,12 @@ func main() {
 	r.Get("/login", LoginHTMLHandler)
 	r.Get("/success", SuccessHTMLHandler)
 	
-
+	r.Post("/password_reset_request", PasswordResetRequestHandler(db, apiCfg))
+    r.Post("/reset_password", PasswordResetHandler(db, apiCfg))
+	r.Get("/reset_password", ResetPasswordHTMLHandler)
+	r.Get("/password_reset_request", PasswordResetRequesHTMLtHandler)
+    r.Post("/change_password", ChangePasswordHandler(db, apiCfg))
+	r.Get("/change_password", ChangePasswordHTMLHandler)  
 	
 	go func() {
 		for {
@@ -104,6 +110,210 @@ func main() {
 func SanitizeInput(input string) string {
     return template.HTMLEscapeString(input)
 }
+
+// PasswordResetRequestHandler handles password reset requests
+func PasswordResetRequestHandler(db *booking.DB, apiCfg apiConfig) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		err := r.ParseForm()
+		if err != nil {
+			http.Error(w, "Failed to parse form data", http.StatusBadRequest)
+			return
+		}
+
+		email := SanitizeInput(r.FormValue("email"))
+		user, err := db.GetUserByEmail(email)
+		if err != nil {
+			http.Error(w, "User not found", http.StatusNotFound)
+			return
+		}
+
+		// Generate password reset token
+		token, err := generateResetToken(apiCfg.jwtSecret, user.ID)
+		if err != nil {
+			http.Error(w, "Failed to generate reset token", http.StatusInternalServerError)
+			return
+		}
+
+		// Send reset email (this is a placeholder function)
+		err = sendResetEmail(email, token)
+		if err != nil {
+			http.Error(w, "Failed to send reset email", http.StatusInternalServerError)
+			return
+		}
+
+		http.Redirect(w, r, "/success?messageType=resetRequest", http.StatusSeeOther)
+	}
+}
+
+// generateResetToken generates a JWT token for password reset
+
+func generateResetToken(secret string, userID int) (string, error) {
+	claims := jwt.MapClaims{
+		"user_id": userID,
+		"exp":     time.Now().Add(15 * time.Minute).Unix(),
+		"purpose": "password_reset", // Token purpose
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(secret))
+}
+
+// sendResetEmail sends a password reset email 
+func sendResetEmail(email, token string) error {
+	from := os.Getenv("EMAIL")
+	password := os.Getenv("EMAIL_PASSWORD")
+
+	to := []string{email}
+	smtpHost := "smtp.gmail.com"
+	smtpPort := "587"
+
+	message := []byte("Subject: Password Reset Request\r\n" +
+		"MIME-version: 1.0;\r\n" +
+		"Content-Type: text/plain; charset=\"UTF-8\";\r\n" +
+		"\r\n" +
+		fmt.Sprintf("To reset your password, please click the following link: http://localhost:8080/reset_password?token=%s", token))
+	auth := smtp.PlainAuth("", from, password, smtpHost)
+	err := smtp.SendMail(smtpHost+":"+smtpPort, auth, from, to, message)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return nil
+}
+
+func PasswordResetHandler(db *booking.DB, apiCfg apiConfig) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        // Parse the query parameters to get the token
+        resetToken := r.FormValue("token")
+        if resetToken == "" {
+            http.Error(w, "Token parameter is missing", http.StatusBadRequest)
+            return
+        }
+
+        // Get the new password from the form
+        newPassword := r.FormValue("newPassword")
+        if newPassword == "" {
+            http.Error(w, "New password is missing", http.StatusBadRequest)
+            return
+        }
+
+        // Verify the reset token
+        claims := jwt.MapClaims{}
+        token, err := jwt.ParseWithClaims(resetToken, claims, func(token *jwt.Token) (interface{}, error) {
+            return []byte(apiCfg.jwtSecret), nil
+        })
+        if err != nil || !token.Valid {
+            http.Error(w, "Invalid or expired reset token", http.StatusUnauthorized)
+            return
+        }
+
+        // Ensure the token is for password reset
+        if claims["purpose"] != "password_reset" {
+            http.Error(w, "Invalid reset token purpose", http.StatusUnauthorized)
+            return
+        }
+
+        userID, ok := claims["user_id"].(float64)
+        if !ok {
+            http.Error(w, "Invalid reset token claims", http.StatusUnauthorized)
+            return
+        }
+
+        // Update the user's password
+        _, err = db.UpdateUserPassword(int(userID), newPassword)
+        if err != nil {
+            http.Error(w, "Failed to update password: "+err.Error(), http.StatusInternalServerError)
+            return
+        }
+
+        http.Redirect(w, r, "/success?messageType=passwordResetSuccess", http.StatusSeeOther)
+    }
+}
+
+
+func ChangePasswordHandler(db *booking.DB, apiCfg apiConfig) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+		// Extract the JWT token from the request cookies
+		cookie, err := r.Cookie("token")
+		if err != nil {
+			if err == http.ErrNoCookie {
+				http.Error(w, "Missing token cookie", http.StatusUnauthorized)
+				return
+			}
+			http.Error(w, "Failed to get token from cookie", http.StatusBadRequest)
+			return
+		}
+
+		tokenString := cookie.Value
+
+		// Validate the JWT token
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			return []byte(apiCfg.jwtSecret), nil
+		})
+		if err != nil || !token.Valid {
+			http.Error(w, "Invalid token", http.StatusUnauthorized)
+			return
+		}
+
+		// Extract user ID from the token claims
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			http.Error(w, "Invalid token claims", http.StatusUnauthorized)
+			return
+		}
+
+		userIDFloat64, ok := claims["user_id"].(float64)
+		if !ok {
+			http.Error(w, "Invalid owner ID in token claims", http.StatusUnauthorized)
+			return
+		}
+
+		userID := int(userIDFloat64)
+
+        user, err := db.GetUserById(int(userID))
+		if err != nil {
+            http.Error(w, "User not found", http.StatusNotFound)
+            return
+        }
+        // Parse form data
+        if err := r.ParseForm(); err != nil {
+            http.Error(w, "Invalid form data", http.StatusBadRequest)
+            return
+        }
+
+        currentPassword := r.FormValue("current_password")
+        newPassword := r.FormValue("new_password")
+        if currentPassword == "" || newPassword == "" {
+            http.Error(w, "Both current and new passwords are required", http.StatusBadRequest)
+            return
+        }
+
+        // Verify the old password
+        err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(currentPassword))
+        if err != nil {
+            http.Error(w, "Old password is incorrect", http.StatusUnauthorized)
+            return
+			
+        }
+
+        // Check password complexity (if you want to enforce it on updates)
+        if err := checkPasswordComplexity(newPassword); err != nil {
+            http.Error(w, err.Error(), http.StatusBadRequest)
+            return
+        }
+
+        // Update the user's password
+        _, err = db.UpdateUserPassword(int(userID), newPassword)
+        if err != nil {
+            http.Error(w, "Failed to update password: "+err.Error(), http.StatusInternalServerError)
+            return
+        }
+
+        http.Redirect(w, r, "/success?messageType=passwordChangeSuccess", http.StatusSeeOther)
+    }
+}
+
+
 // Define a function to render the page with header and footer templates
 func renderPage(w http.ResponseWriter, r *http.Request, content string) {
 	headerTemplate, err := ioutil.ReadFile("header.html")
@@ -153,6 +363,34 @@ func BookingHTMLHandler(w http.ResponseWriter, r *http.Request) {
 	renderPage(w, r, "booking.html")
 
 }
+func ChangePasswordHTMLHandler(w http.ResponseWriter, r *http.Request) {
+    // Serve the HTML form for changing the password
+    renderPage(w, r, "change_password.html")
+}
+func PasswordResetRequesHTMLtHandler(w http.ResponseWriter, r *http.Request) {
+    // Serve the HTML form for changing the password
+    renderPage(w, r, "passwordreset_request.html")
+}
+func ResetPasswordHTMLHandler(w http.ResponseWriter, r *http.Request) {
+        // Extract the token from the URL query parameters
+		token := r.URL.Query().Get("token")
+
+		// Pass the token to the HTML template
+		data := struct {
+			Token string
+		}{
+			Token: token,
+		}
+
+		    // Render the HTML template with the token value
+			tmpl, err := template.ParseFiles("password_reset.html")
+
+			err = tmpl.Execute(w ,data)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+}
 
 func SuccessHTMLHandler(w http.ResponseWriter, r *http.Request) {
     messageType := r.URL.Query().Get("messageType")
@@ -177,6 +415,9 @@ func SuccessHTMLHandler(w http.ResponseWriter, r *http.Request) {
 	case "loginSuccess":
         data.Message = "Your login was successful!"
         data.ContinueURL = "/" 
+	case "passwordResetSuccess" :
+		data.Message = "Your password has been successfully reset."
+		data.ContinueURL = "/" 
 
     default:
         data.Message = "Success!"

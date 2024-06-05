@@ -314,6 +314,24 @@ func (db *DB) GetUserByEmail(email string) (User, error) {
 	return User{}, errors.New("user not found")
 }
 
+// GetUserByID returns the user with the specified ID from the database
+func (db *DB) GetUserById(id int) (User, error) {
+	db.mux.Lock()
+	defer db.mux.Unlock()
+
+	dbStruct, err := db.loadDB()
+	if err != nil {
+		return User{}, err
+	}
+
+	user, ok := dbStruct.Users[id]
+	if !ok {
+		return User{}, errors.New("user not found")
+	}
+
+	return user, nil
+
+}
 func (db *DB) GetOwnerByEmail(email string) (Owner, error) {
 	db.mux.Lock()
 	defer db.mux.Unlock()
@@ -399,6 +417,57 @@ func (db *DB) UpdateUser(userID int, email, password string) (User, error) {
 
     return user, nil
 }
+
+func (db *DB) UpdateUserPassword(userID int, newPassword string) (User, error) {
+    db.mux.Lock()
+    defer db.mux.Unlock()
+
+    dbStruct, err := db.loadDB()
+    if err != nil {
+        return User{}, err
+    }
+
+    user, ok := dbStruct.Users[userID]
+    if !ok {
+        return User{}, errors.New("user not found")
+    }
+
+    // Check if the new password matches any of the previous passwords
+    for _, prevPassword := range user.PreviousPasswords {
+        err := bcrypt.CompareHashAndPassword([]byte(prevPassword), []byte(newPassword))
+        if err == nil {
+            return User{}, errors.New("new password cannot be the same as any of the previous passwords")
+        }
+    }
+
+    // Encrypt the new password
+    securedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+    if err != nil {
+        return User{}, err
+    }
+
+    // Store the old password in the previousPasswords array (limit to 5)
+    user.PreviousPasswords = append([]string{user.Password}, user.PreviousPasswords...)
+    if len(user.PreviousPasswords) > 5 {
+        user.PreviousPasswords = user.PreviousPasswords[:5]
+    }
+
+    // Update user's password and password changed time
+    user.Password = string(securedPassword)
+    user.PasswordChangedAt = time.Now() // Record the time of password change
+
+    // Update the user in the database structure
+    dbStruct.Users[userID] = user
+
+    // Write the updated database structure to the file
+    err = db.writeDB(dbStruct)
+    if err != nil {
+        return User{}, err
+    }
+
+    return user, nil
+}
+
 
 type Booking struct {
 	ID           int       `json:"id,omitempty"`
