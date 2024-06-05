@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"sync"
 	"unicode"
+	
 
 	"io/ioutil"
 	"log"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/Hardcorelevelingwarrior/chap3/booking"
 	"github.com/go-chi/chi/v5"
+	"github.com/go-playground/validator"
 	"github.com/golang-jwt/jwt"
 	"github.com/joho/godotenv"
 	"golang.org/x/crypto/bcrypt"
@@ -85,6 +87,8 @@ func main() {
 	r.Get("/login", LoginHTMLHandler)
 	r.Get("/success", SuccessHTMLHandler)
 	
+
+	
 	go func() {
 		for {
 			time.Sleep(15 * time.Minute)
@@ -96,7 +100,10 @@ func main() {
 	log.Println("Server started on port 8080")
 	http.ListenAndServe(":8080", r)
 }
-
+// SanitizeInput sanitizes user input to prevent XSS attacks.
+func SanitizeInput(input string) string {
+    return template.HTMLEscapeString(input)
+}
 // Define a function to render the page with header and footer templates
 func renderPage(w http.ResponseWriter, r *http.Request, content string) {
 	headerTemplate, err := ioutil.ReadFile("header.html")
@@ -235,7 +242,7 @@ func LoginHTMLHandler(w http.ResponseWriter, r *http.Request) {
 }
 func checkPasswordComplexity(password string) error {
 	if len(password) < 8 {
-		return errors.New("Mật khẩu phải có ít nhất 8 ký tự")
+		return errors.New("password need at least 8 characters")
 	}
 
 	hasUpper := false
@@ -257,11 +264,25 @@ func checkPasswordComplexity(password string) error {
 	}
 
 	if !hasUpper || !hasLower || !hasDigit || !hasSpecial {
-		return errors.New("Mật khẩu phải chứa ít nhất một chữ hoa, một chữ thường, một số và một ký tự đặc biệt")
+		return errors.New("password need at least 1 upper , 1 lower ,1 digit and 1 special character")
 	}
 
 	return nil
 }
+type OwnerRegistration struct {
+    Name     string `validate:"required,min=2,max=100"`
+    Email    string `validate:"required,email"`
+    Password string `validate:"required,min=8"`
+    Phone    string `validate:"required"`
+    Location string `validate:"required"`
+}
+var validate *validator.Validate
+
+func init() {
+    validate = validator.New()
+}
+
+
 
 func RegisterOwnerHandler(db *booking.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -274,18 +295,27 @@ func RegisterOwnerHandler(db *booking.DB) http.HandlerFunc {
 		}
 
 		// Extract owner data from the form
-		name := r.FormValue("name")
-		email := r.FormValue("email")
+		name := SanitizeInput(r.FormValue("name"))
+		email := SanitizeInput(r.FormValue("email"))
 		password := r.FormValue("password")
 		phone := r.FormValue("phone")
-		location := r.FormValue("location")
+		location := SanitizeInput(r.FormValue("location"))
 
-		// Check if required fields are empty
-		if name == "" || email == "" || password == "" {
-			http.Error(w, "Name, email, and password are required", http.StatusBadRequest)
-			log.Println("Name, email, and password are required")
-			return
-		}
+        // Extract owner data from the form
+        owner := OwnerRegistration{
+            Name:     name,
+            Email:    email,
+            Password: password,
+            Phone:    phone,
+            Location: location,
+        }
+		       // Validate the owner data
+			   err = validate.Struct(owner)
+			   if err != nil {
+				   http.Error(w, "Invalid input: "+err.Error(), http.StatusBadRequest)
+				   log.Println("Invalid input:", err)
+				   return
+			   }
 
 		// Kiểm tra độ phức tạp mật khẩu
 		if err := checkPasswordComplexity(password); err != nil {
@@ -326,6 +356,11 @@ func RegisterOwnerHTMLHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 
+type UserRegistration struct {
+    Email    string `validate:"required,email"`
+    Password string `validate:"required,min=8"`
+}
+
 func RegisterUserHandler(db *booking.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Parse form data from the request
@@ -337,15 +372,22 @@ func RegisterUserHandler(db *booking.DB) http.HandlerFunc {
 		}
 
 		// Extract user data from the form
-		email := r.FormValue("email")
+		email := SanitizeInput(r.FormValue("email"))
 		password := r.FormValue("password")
 
-		// Check if required fields are empty
-		if email == "" || password == "" {
-			http.Error(w, "Email and password are required", http.StatusBadRequest)
-			log.Println("Email and password are required")
-			return
-		}
+		        // Extract user data from the form
+				user := UserRegistration{
+					Email:    email,
+					Password: password,
+				}
+
+        // Validate the user data
+        err = validate.Struct(user)
+        if err != nil {
+            http.Error(w, "Invalid input: "+err.Error(), http.StatusBadRequest)
+            log.Println("Invalid input:", err)
+            return
+        }
 
 		// Kiểm tra độ phức tạp mật khẩu
 		if err := checkPasswordComplexity(password); err != nil {
@@ -371,6 +413,14 @@ func RegisterUserHandler(db *booking.DB) http.HandlerFunc {
 		http.Redirect(w, r, "/success?messageType=userRegister", http.StatusSeeOther)
 
 	}
+}
+type PlaygroundRegistration struct {
+    Name               string  `validate:"required"`
+    Location           string  `validate:"required"`
+    Size               string  `validate:"required"`
+    AvailableHours     string  `validate:"required"`
+    CancellationPeriod int     `validate:"required"`
+    PricePerHour       float64 `validate:"required,gt=0"`
 }
 
 func RegisterPlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
@@ -427,14 +477,52 @@ func RegisterPlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 		}
 
 		// Extract playground data from the form
-		name := r.FormValue("name")
-		location := r.FormValue("location")
-		size := r.FormValue("size")
-		availableHours := r.FormValue("available_hours")
-		cancellation_period := r.FormValue("cancellation_period")
-		price_per_hour := r.FormValue("price_per_hour")
+		name := SanitizeInput(r.FormValue("name"))
+		location := SanitizeInput(r.FormValue("location"))
+		size := SanitizeInput(r.FormValue("size"))
+		availableHours := SanitizeInput(r.FormValue("available_hours"))
+		cancellation_period := SanitizeInput(r.FormValue("cancellation_period"))
+		price_per_hour := SanitizeInput(r.FormValue("price_per_hour"))
 		price_per_hour_float, _ := strconv.ParseFloat(strings.TrimSpace(price_per_hour), 64)
 		cancellation_period_int, _ := strconv.Atoi(cancellation_period)
+
+        // Extract playground data from the form
+        playground := booking.Playground{
+            Name:           name,
+            Location:       location,
+            Size:           size,
+            AvailableHours: availableHours,
+        }
+
+        // Parse cancellation period with error handling
+        cancellationPeriodStr := SanitizeInput(r.FormValue("cancellation_period"))
+        if cancellationPeriodStr != "" { // Check if the field is empty
+            var err error
+            playground.CancellationPeriod, err = strconv.Atoi(cancellationPeriodStr)
+            if err != nil {
+                http.Error(w, "Invalid cancellation period", http.StatusBadRequest)
+                return
+            }
+        }
+
+        // Parse price per hour with error handling
+        pricePerHourStr := SanitizeInput(r.FormValue("price_per_hour"))
+        if pricePerHourStr != "" {  // Check if the field is empty
+            var err error
+            playground.PricePerHour, err = strconv.ParseFloat(pricePerHourStr, 64)
+            if err != nil {
+                http.Error(w, "Invalid price per hour", http.StatusBadRequest)
+                return
+            }
+        }
+	
+			// Validate the playground data
+			err = validate.Struct(playground)
+			if err != nil {
+				http.Error(w, "Invalid input: "+err.Error(), http.StatusBadRequest)
+				log.Println("Invalid input:", err)
+				return
+			}
 		// Create the playground
 		_, err = db.CreatePlayground(ownerID, booking.Playground{
 			Name:               name,
@@ -797,6 +885,13 @@ func DeletePlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 	}
 }
 
+type BookingRequest struct {
+    PlaygroundID int    `validate:"required,gt=0"`
+    StartTime    string `validate:"required,datetime=2006-01-02T15:04"`
+    Duration     int    `validate:"required,gt=0"`
+}
+
+
 func BookPlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Extract the JWT token from the request cookies
@@ -835,26 +930,40 @@ func BookPlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 			return
 		}
 
-		playgroundIDStr := r.Form.Get("playground_id")
+		playgroundIDStr := SanitizeInput(r.Form.Get("playground_id"))
 		playgroundID, err := strconv.Atoi(playgroundIDStr)
 		if err != nil {
 			http.Error(w, "Invalid playground ID", http.StatusBadRequest)
 			return
 		}
 
-		startTimeString := r.Form.Get("start_time")
+		startTimeString := SanitizeInput(r.Form.Get("start_time"))
 		startTime, err := time.Parse("2006-01-02T15:04", startTimeString)
 		if err != nil {
 			http.Error(w, "Invalid start time", http.StatusBadRequest)
 			return
 		}
-		durationStr := r.Form.Get("duration")
+		durationStr := SanitizeInput(r.Form.Get("duration"))
 		duration, err := strconv.Atoi(durationStr)
 		if err != nil {
 			http.Error(w, "Invalid duration", http.StatusBadRequest)
 			return
 		}
-
+		
+		        // Extract booking data from the form
+				bookingRequest := BookingRequest{
+					PlaygroundID: playgroundID,
+					StartTime:    r.Form.Get("start_time"),
+					Duration:     duration,
+				}
+		
+				// Validate the booking request
+				err = validate.Struct(bookingRequest)
+				if err != nil {
+					http.Error(w, "Invalid input: "+err.Error(), http.StatusBadRequest)
+					log.Println("Invalid input:", err)
+					return
+				}
 		// Validate the booking request
 		if startTime.Before(time.Now()) {
 			http.Error(w, "Booking start time must be in the future", http.StatusBadRequest)

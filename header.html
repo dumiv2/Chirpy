@@ -46,4 +46,34 @@
     <!-- Core theme JS-->
     <script src="js/scripts.js"></script>
 </body>
+<script>$(document).ready(function() {
+    // Check for successful login (e.g., by checking a cookie or local storage)
+    if (isLoggedIn()) {
+        $.ajax({
+            url: '/api/get_user_name', // Your endpoint to fetch user data
+            success: function(response) {
+                updateNavBar(response.userName); // Assuming your response is JSON
+            }
+        });
+    }
+});
+
+function isLoggedIn() {
+    // Your logic to check if the user is logged in (e.g., check for a session cookie)
+}
+
+function updateNavBar(userName) {
+    $('.nav-item .btn').replaceWith(`
+        <li class="nav-item dropdown">
+            <a class="btn btn-outline-dark dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                Welcome, ${userName}
+            </a>
+            <ul class="dropdown-menu">
+                <li><a class="dropdown-item" href="/profile">Profile</a></li>
+                <li><a class="dropdown-item" href="/logout">Logout</a></li>
+            </ul>
+        </li>
+    `);
+}
+</script>
 </html>
