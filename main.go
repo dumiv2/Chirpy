@@ -511,9 +511,9 @@ func checkPasswordComplexity(password string) error {
 	return nil
 }
 type OwnerRegistration struct {
-    Name     string `validate:"required,min=2,max=100"`
+    Name     string `validate:"required,min=2,max=20"`
     Email    string `validate:"required,email"`
-    Password string `validate:"required,min=8"`
+    Password string `validate:"required,min=8,max=20"`
     Phone    string `validate:"required"`
     Location string `validate:"required"`
 }
@@ -599,7 +599,7 @@ func RegisterOwnerHTMLHandler(w http.ResponseWriter, r *http.Request) {
 
 type UserRegistration struct {
     Email    string `validate:"required,email"`
-    Password string `validate:"required,min=8"`
+    Password string `validate:"required,min=8,max=20"`
 }
 
 func RegisterUserHandler(db *booking.DB) http.HandlerFunc {
@@ -1128,7 +1128,7 @@ func DeletePlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 
 type BookingRequest struct {
     PlaygroundID int    `validate:"required,gt=0"`
-    StartTime    string `validate:"required,datetime=2006-01-02T15:04"`
+    StartTime    string `validate:"required"`
     Duration     int    `validate:"required,gt=0"`
 }
 
