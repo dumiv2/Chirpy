@@ -468,6 +468,70 @@ func (db *DB) UpdateUserPassword(userID int, newPassword string) (User, error) {
     return user, nil
 }
 
+func (db *DB) UpdateOwnerPassword(ownerID int, newPassword string) (Owner, error) {
+    db.mux.Lock()
+    defer db.mux.Unlock()
+
+    dbStruct, err := db.loadDB()
+    if err != nil {
+        return Owner{}, err
+    }
+
+    owner, ok := dbStruct.Owners[ownerID]
+    if !ok {
+        return Owner{}, errors.New("owner not found")
+    }
+
+
+    // Encrypt the new password
+    securedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+    if err != nil {
+        return Owner{}, err
+    }
+
+    // Update owner's password and password changed time
+    owner.Password = string(securedPassword)
+
+    // Update the owner in the database structure
+    dbStruct.Owners[ownerID] = owner
+
+    // Write the updated database structure to the file
+    err = db.writeDB(dbStruct)
+    if err != nil {
+        return Owner{}, err
+    }
+
+    return owner, nil
+}
+
+func (db *DB) DeleteOwner(id int) error {
+	db.mux.Lock()
+	defer db.mux.Unlock()
+
+	dbstruct, _ := db.loadDB()
+	if _, ok := dbstruct.Owners[id]; !ok {
+		return errors.New("owner not found")
+	}
+	delete(dbstruct.Owners, id)
+
+	db.writeDB(dbstruct)
+	return nil
+}
+
+func (db *DB) DeleteUser(id int) error {
+	db.mux.Lock()
+	defer db.mux.Unlock()
+
+	dbstruct, _ := db.loadDB()
+	if _, ok := dbstruct.Users[id]; !ok {
+		return errors.New("user not found")
+	}
+	delete(dbstruct.Users, id)
+
+	db.writeDB(dbstruct)
+	return nil
+}
+
 
 type Booking struct {
 	ID           int       `json:"id,omitempty"`
@@ -551,6 +615,20 @@ func (db *DB) GetBookingByID(bookingID int) (Booking, error) {
 	}
 
 	return booking, nil
+}
+
+func (db *DB) DeleteBooking(id int) error {
+	db.mux.Lock()
+	defer db.mux.Unlock()
+
+	dbstruct, _ := db.loadDB()
+	if _, ok := dbstruct.Bookings[id]; !ok {
+		return errors.New("booking not found")
+	}
+	delete(dbstruct.Bookings, id)
+
+	db.writeDB(dbstruct)
+	return nil
 }
 
 // isTimeSlotAvailable checks if the requested time slot is available for booking

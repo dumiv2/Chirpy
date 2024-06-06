@@ -63,37 +63,62 @@ func main() {
 	}
 
 	r := chi.NewRouter()
-
+	//OWNER
+	//CREATE
 	r.Post("/register_owner", RegisterOwnerHandler(db))
 	r.Get("/register_owner", RegisterOwnerHTMLHandler)
 	r.Get("/login/owner", OwnerLoginHTMLHandler)
 	r.Post("/login/owner", OwnerLoginHandler(db, apiCfg))
+	//UPDATE
+	r.Post("/owner/profile/change_password", ChangeOwnerPasswordHandler(db, apiCfg))
+	r.Get("/owner/profile", OwnerProfileHTMLHandler) 
+	//DELETE
+	r.Post("/owner/profile/delete_account",DeleteOwnerHandler(db, apiCfg))
 
+	//PLAYGROUND
+	//CREATE
 	r.Post("/register/playground", RegisterPlaygroundHandler(db, apiCfg))
 	r.Get("/register/playground", ResPlayHTMLHandler)
+	//READ
 	r.Get("/", GetPlaygroundsHandler(db))
 	r.Get("/playgrounds/{id}", GetPlaygroundHandler(db))
-	//r.Delete("/playgrounds/{id}", DeletePlaygroundHandler(db, apiCfg))
+	//DELETE
+	r.Post("/playgrounds/{id}", DeletePlaygroundHandler(db, apiCfg))
 
+	//USER
+	//CREATE
 	r.Post("/register_user", RegisterUserHandler(db))
 	r.Get("/register_user", RegisterUserHTMLHandler)
 	r.Get("/login/user", LoginUserHTMLHandler)
 	r.Post("/login/user", UserLoginHandler(db, apiCfg))
+	//UPDATE
+	r.Post("/user/profile/change_password", ChangePasswordHandler(db, apiCfg))
+	r.Get("/user/profile", UserProfileHTMLHandler)  
 	//r.Put("/users",UpdateUserHandler(db,apiCfg))
+	//DELETE 
+	r.Post("/user/profile/delete_account",DeleteUserHandler(db, apiCfg))
 
+
+	//BOOKING
+	//CREATE
 	r.Post("/booking", BookPlaygroundHandler(db, apiCfg))
 	r.Get("/booking", BookingHTMLHandler)
+	//READ
 	r.Get("/booking/{playgroundid}", GetBookingsForPlaygroundHandler(db))
+	//DELETE 
+	r.Post("booking/delete",DeleteBookingHandler(db,apiCfg))
 
+	//LOGIN PAGE
 	r.Get("/login", LoginHTMLHandler)
+	//SUCCESS PAGE
 	r.Get("/success", SuccessHTMLHandler)
 	
+	//FORGOT PASSWORD
 	r.Post("/password_reset_request", PasswordResetRequestHandler(db, apiCfg))
     r.Post("/reset_password", PasswordResetHandler(db, apiCfg))
 	r.Get("/reset_password", ResetPasswordHTMLHandler)
 	r.Get("/password_reset_request", PasswordResetRequesHTMLtHandler)
-    r.Post("/change_password", ChangePasswordHandler(db, apiCfg))
-	r.Get("/change_password", ChangePasswordHTMLHandler)  
+
 	
 	go func() {
 		for {
@@ -312,7 +337,88 @@ func ChangePasswordHandler(db *booking.DB, apiCfg apiConfig) http.HandlerFunc {
         http.Redirect(w, r, "/success?messageType=passwordChangeSuccess", http.StatusSeeOther)
     }
 }
+// ChangeOwnerPasswordHandler handles password changes for owners
+func ChangeOwnerPasswordHandler(db *booking.DB, apiCfg apiConfig) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Extract the JWT token from the request cookies
+		cookie, err := r.Cookie("token")
+		if err != nil {
+			if err == http.ErrNoCookie {
+				http.Error(w, "Missing token cookie", http.StatusUnauthorized)
+				return
+			}
+			http.Error(w, "Failed to get token from cookie", http.StatusBadRequest)
+			return
+		}
 
+		tokenString := cookie.Value
+
+		// Validate the JWT token
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			return []byte(apiCfg.jwtSecret), nil
+		})
+		if err != nil || !token.Valid {
+			http.Error(w, "Invalid token", http.StatusUnauthorized)
+			return
+		}
+
+		// Extract owner ID from the token claims
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			http.Error(w, "Invalid token claims", http.StatusUnauthorized)
+			return
+		}
+
+		ownerIDFloat64, ok := claims["owner_id"].(float64)
+		if !ok {
+			http.Error(w, "Invalid owner ID in token claims", http.StatusUnauthorized)
+			return
+		}
+
+		ownerID := int(ownerIDFloat64)
+
+		owner, err := db.GetOwnerByID(ownerID)
+		if err != nil {
+			http.Error(w, "Owner not found", http.StatusNotFound)
+			return
+		}
+
+		// Parse form data
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Invalid form data", http.StatusBadRequest)
+			return
+		}
+
+		currentPassword := r.FormValue("current_password")
+		newPassword := r.FormValue("new_password")
+		if currentPassword == "" || newPassword == "" {
+			http.Error(w, "Both current and new passwords are required", http.StatusBadRequest)
+			return
+		}
+
+		// Verify the old password
+		err = bcrypt.CompareHashAndPassword([]byte(owner.Password), []byte(currentPassword))
+		if err != nil {
+			http.Error(w, "Old password is incorrect", http.StatusUnauthorized)
+			return
+		}
+
+		// Check password complexity (if you want to enforce it on updates)
+		if err := checkPasswordComplexity(newPassword); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// Update the owner's password
+		_, err = db.UpdateOwnerPassword(ownerID, newPassword)
+		if err != nil {
+			http.Error(w, "Failed to update password: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		http.Redirect(w, r, "/success?messageType=passwordChangeSuccess", http.StatusSeeOther)
+	}
+}
 
 // Define a function to render the page with header and footer templates
 func renderPage(w http.ResponseWriter, r *http.Request, content string) {
@@ -363,9 +469,13 @@ func BookingHTMLHandler(w http.ResponseWriter, r *http.Request) {
 	renderPage(w, r, "booking.html")
 
 }
-func ChangePasswordHTMLHandler(w http.ResponseWriter, r *http.Request) {
+func UserProfileHTMLHandler(w http.ResponseWriter, r *http.Request) {
     // Serve the HTML form for changing the password
-    renderPage(w, r, "change_password.html")
+    renderPage(w, r, "profile_user.html")
+}
+func OwnerProfileHTMLHandler(w http.ResponseWriter, r *http.Request) {
+    // Serve the HTML form for changing the password
+    renderPage(w, r, "profile_owner.html")
 }
 func PasswordResetRequesHTMLtHandler(w http.ResponseWriter, r *http.Request) {
     // Serve the HTML form for changing the password
@@ -653,6 +763,106 @@ func RegisterUserHandler(db *booking.DB) http.HandlerFunc {
 
 		http.Redirect(w, r, "/success?messageType=userRegister", http.StatusSeeOther)
 
+	}
+}
+
+// DeleteUserHandler handles deleting a user account
+func DeleteUserHandler(db *booking.DB , apiCfg apiConfig ) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Extract the JWT token from the request cookies
+		cookie, err := r.Cookie("token")
+		if err != nil {
+			if err == http.ErrNoCookie {
+				http.Error(w, "Missing token cookie", http.StatusUnauthorized)
+				return
+			}
+			http.Error(w, "Failed to get token from cookie", http.StatusBadRequest)
+			return
+		}
+
+		tokenString := cookie.Value
+
+		// Validate the JWT token
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			return []byte(apiCfg.jwtSecret), nil
+		})
+		if err != nil || !token.Valid {
+			http.Error(w, "Invalid token", http.StatusUnauthorized)
+			return
+		}
+
+		// Extract user ID from the token claims
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			http.Error(w, "Invalid token claims", http.StatusUnauthorized)
+			return
+		}
+
+		userIDFloat64, ok := claims["user_id"].(float64)
+		if !ok {
+			http.Error(w, "Invalid user ID in token claims", http.StatusUnauthorized)
+			return
+		}
+
+		userID := int(userIDFloat64)
+
+		err = db.DeleteUser(userID)
+		if err != nil {
+			http.Error(w, "Failed to delete user: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		http.Redirect(w, r, "/success?messageType=accountDeleteSuccess", http.StatusSeeOther)
+	}
+}
+
+// DeleteOwnerHandler handles deleting an owner account
+func DeleteOwnerHandler(db *booking.DB, apiCfg apiConfig) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Extract the JWT token from the request cookies
+		cookie, err := r.Cookie("token")
+		if err != nil {
+			if err == http.ErrNoCookie {
+				http.Error(w, "Missing token cookie", http.StatusUnauthorized)
+				return
+			}
+			http.Error(w, "Failed to get token from cookie", http.StatusBadRequest)
+			return
+		}
+
+		tokenString := cookie.Value
+
+		// Validate the JWT token
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			return []byte(apiCfg.jwtSecret), nil
+		})
+		if err != nil || !token.Valid {
+			http.Error(w, "Invalid token", http.StatusUnauthorized)
+			return
+		}
+
+		// Extract owner ID from the token claims
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			http.Error(w, "Invalid token claims", http.StatusUnauthorized)
+			return
+		}
+
+		ownerIDFloat64, ok := claims["owner_id"].(float64)
+		if !ok {
+			http.Error(w, "Invalid owner ID in token claims", http.StatusUnauthorized)
+			return
+		}
+
+		ownerID := int(ownerIDFloat64)
+
+		err = db.DeleteOwner(ownerID)
+		if err != nil {
+			http.Error(w, "Failed to delete owner: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		http.Redirect(w, r, "/success?messageType=accountDeleteSuccess", http.StatusSeeOther)
 	}
 }
 type PlaygroundRegistration struct {
@@ -1283,3 +1493,85 @@ func GetBookingsForPlaygroundHandler(db *booking.DB) http.HandlerFunc {
 		}
 	}
 }
+
+func DeleteBookingHandler(db *booking.DB, apiCfg apiConfig) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        // Extract the JWT token from the request cookies
+        cookie, err := r.Cookie("token")
+        if err != nil {
+            if err == http.ErrNoCookie {
+                http.Error(w, "Missing token cookie", http.StatusUnauthorized)
+                return
+            }
+            http.Error(w, "Failed to get token from cookie", http.StatusBadRequest)
+            return
+        }
+
+        tokenString := cookie.Value
+
+        // Validate the JWT token
+        token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+            return []byte(apiCfg.jwtSecret), nil
+        })
+        if err != nil || !token.Valid {
+            http.Error(w, "Invalid token", http.StatusUnauthorized)
+            return
+        }
+
+        // Extract user ID from the token claims
+        claims, ok := token.Claims.(jwt.MapClaims)
+        if !ok {
+            http.Error(w, "Invalid token claims", http.StatusUnauthorized)
+            return
+        }
+
+        userIDFloat64, ok := claims["user_id"].(float64)
+        if !ok {
+            http.Error(w, "Invalid user ID in token claims", http.StatusUnauthorized)
+            return
+        }
+
+        userID := int(userIDFloat64)
+
+        // Parse form data
+        if err := r.ParseForm(); err != nil {
+            http.Error(w, "Invalid form data", http.StatusBadRequest)
+            return
+        }
+
+        bookingID := r.FormValue("booking_id")
+        if bookingID == "" {
+            http.Error(w, "Booking ID is required", http.StatusBadRequest)
+            return
+        }
+
+        // Parse the booking ID as an integer
+        bookingIDint, err := strconv.Atoi(bookingID)
+        if err != nil {
+            http.Error(w, "Invalid booking ID", http.StatusBadRequest)
+            return
+        }
+        // Fetch the booking from the database
+        booking, err := db.GetBookingByID(bookingIDint)
+        if err != nil {
+            http.Error(w, "Failed to fetch booking: "+err.Error(), http.StatusInternalServerError)
+            return
+        }
+
+        // Check if the booking belongs to the user
+        if booking.UserID != userID {
+            http.Error(w, "Unauthorized", http.StatusUnauthorized)
+            return
+        }
+
+        // Delete the booking
+        err = db.DeleteBooking(bookingIDint)
+        if err != nil {
+            http.Error(w, "Failed to delete booking: "+err.Error(), http.StatusInternalServerError)
+            return
+        }
+
+        http.Redirect(w, r, "/success?messageType=bookingDeletionSuccess", http.StatusSeeOther)
+    }
+}
+
