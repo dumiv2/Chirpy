@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"html/template"
 	"sync"
 	"unicode"
@@ -106,7 +107,7 @@ func main() {
 	//READ
 	r.Get("/booking/{playgroundid}", GetBookingsForPlaygroundHandler(db))
 	//DELETE 
-	r.Post("booking/delete",DeleteBookingHandler(db,apiCfg))
+	r.Post("/booking/delete",DeleteBookingHandler(db,apiCfg))
 
 	//LOGIN PAGE
 	r.Get("/login", LoginHTMLHandler)
@@ -494,6 +495,10 @@ func ResetPasswordHTMLHandler(w http.ResponseWriter, r *http.Request) {
 
 		    // Render the HTML template with the token value
 			tmpl, err := template.ParseFiles("password_reset.html")
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 
 			err = tmpl.Execute(w ,data)
 			if err != nil {
@@ -649,7 +654,7 @@ func RegisterOwnerHandler(db *booking.DB) http.HandlerFunc {
 		name := SanitizeInput(r.FormValue("name"))
 		email := SanitizeInput(r.FormValue("email"))
 		password := r.FormValue("password")
-		phone := r.FormValue("phone")
+		phone := SanitizeInput(r.FormValue("phone"))
 		location := SanitizeInput(r.FormValue("location"))
 
         // Extract owner data from the form
@@ -995,25 +1000,37 @@ func RegisterPlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 }
 
 func GetPlaygroundsHandler(db *booking.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		playgrounds, err := db.GetAllPlaygrounds()
-		if err != nil {
-			http.Error(w, "Failed to get playgrounds: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
+    return func(w http.ResponseWriter, r *http.Request) {
+        playgrounds, err := db.GetAllPlaygrounds()
+        if err != nil {
+            http.Error(w, "Failed to get playgrounds: "+err.Error(), http.StatusInternalServerError)
+            return
+        }
 
-		tmpl, err := template.ParseFiles("playgrounds.html")
-		if err != nil {
-			http.Error(w, "Failed to parse HTML template: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
+        // Parse the HTML template
+        tmpl, err := template.ParseFiles("playgrounds.html")
+        if err != nil {
+            http.Error(w, "Failed to parse HTML template: "+err.Error(), http.StatusInternalServerError)
+            return
+        }
 
-		err = tmpl.Execute(w, playgrounds)
-		if err != nil {
-			http.Error(w, "Failed to execute HTML template: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}
+        // Define a custom template function for HTML escaping
+        funcMap := template.FuncMap{
+            "safeHTML": func(s string) template.HTML {
+                return template.HTML(html.EscapeString(s))
+            },
+        }
+
+        // Associate the custom function map with the template
+        tmpl = tmpl.Funcs(funcMap)
+
+        // Execute the HTML template with the playgrounds data
+        err = tmpl.Execute(w, playgrounds)
+        if err != nil {
+            http.Error(w, "Failed to execute HTML template: "+err.Error(), http.StatusInternalServerError)
+            return
+        }
+    }
 }
 
 func GetPlaygroundHandler(db *booking.DB) http.HandlerFunc {
