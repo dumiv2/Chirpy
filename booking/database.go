@@ -23,6 +23,7 @@ type Playground struct {
 	PricePerHour     float64 `json:"price_per_hour,omitempty"`
 	CancellationPeriod int    `json:"cancellation_period,omitempty"`
 	OwnerID          int     `json:"owner_id,omitempty"` 
+	Image string `json:"image,omitempty"`
 }
 
 type User struct {

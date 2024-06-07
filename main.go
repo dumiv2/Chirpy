@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"html"
 	"html/template"
+	"path/filepath"
+	"regexp"
 	"sync"
 	"unicode"
 
@@ -119,7 +121,8 @@ func main() {
     r.Post("/reset_password", PasswordResetHandler(db, apiCfg))
 	r.Get("/reset_password", ResetPasswordHTMLHandler)
 	r.Get("/password_reset_request", PasswordResetRequesHTMLtHandler)
-
+	fileServer := http.FileServer(http.Dir("./static/"))
+	r.Handle("/static/*", http.StripPrefix("/static", fileServer))
 	
 	go func() {
 		for {
@@ -926,11 +929,52 @@ func RegisterPlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 		}
 
 		// Parse form data from the request
-		err = r.ParseForm()
-		if err != nil {
-			http.Error(w, "Failed to parse form data", http.StatusBadRequest)
-			return
-		}
+        err = r.ParseMultipartForm(32 << 20) // 32MB max file size
+        if err != nil {
+            http.Error(w, "Invalid form data", http.StatusBadRequest)
+            return
+        }
+
+        // Get the image file from the form data
+        file, header, err := r.FormFile("image")
+        if err != nil {
+            http.Error(w, "No image file provided", http.StatusBadRequest)
+            return
+        }
+		// Validate the file type and size
+        contentType := header.Header.Get("Content-Type")
+        if contentType != "image/jpeg" && contentType != "image/png" {
+            http.Error(w, "Invalid file type", http.StatusBadRequest)
+            return
+        }
+
+        if header.Size > 1024*1024*5 { // 5MB max file size
+            http.Error(w, "File too large", http.StatusBadRequest)
+            return
+        }
+
+        // Sanitize the filename
+        filename := filepath.Base(header.Filename)
+        allowedChars := regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
+        if !allowedChars.MatchString(filename) {
+            http.Error(w, "Invalid filename", http.StatusBadRequest)
+            return
+        }
+
+        // Read the file contents into a byte slice
+        fileBytes, err := ioutil.ReadAll(file)
+        if err != nil {
+            http.Error(w, "Failed to read file", http.StatusInternalServerError)
+            return
+        }
+
+        // Store the image securely
+        imagePath := filepath.Join("static", filename)
+        err = os.WriteFile(imagePath, fileBytes, 0644)
+        if err != nil {
+            http.Error(w, "Failed to save image to server", http.StatusInternalServerError)
+            return
+        }
 
 		// Extract playground data from the form
 		name := SanitizeInput(r.FormValue("name"))
@@ -948,6 +992,8 @@ func RegisterPlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
             Location:       location,
             Size:           size,
             AvailableHours: availableHours,
+			Image: imagePath,
+
         }
 
         // Parse cancellation period with error handling
@@ -988,6 +1034,8 @@ func RegisterPlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 			CancellationPeriod: cancellation_period_int,
 			PricePerHour:       price_per_hour_float,
 			OwnerID:            ownerID,
+			Image: imagePath,
+
 		})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)

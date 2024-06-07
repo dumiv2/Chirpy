@@ -108,14 +108,13 @@
     </header>
     <div class="container1">
         <h2>Register Playground</h2>
-        <form name="register/playground" method="POST" action="/register/playground">
+        <form action="/register/playground" method="POST" enctype="multipart/form-data">
             <label for="name">Name:</label>
             <input type="text" id="name" name="name" required><br>
             <label for="location">Location:</label>
             <input type="text" id="location" name="location" required><br>
             <label for="size">Size (Person):</label>
             <input type="text" id="size" name="size" required><br>
-        
             <label for="available_hours">Available Hours:</label>
             <div class="time-container">
                 <label for="start_time">Start Time:</label>
@@ -123,11 +122,12 @@
                 <label for="end_time">End Time:</label>
                 <input type="time" id="end_time" name="end_time" required>
             </div><br>
-            <input type="hidden" id="available_hours" name="available_hours">
             <label for="price_per_hour">Price Per Hour (USD):</label>
             <input type="number" id="price_per_hour" name="price_per_hour" min="0" step="1" required><br>
             <label for="cancellation_period">Cancellation Period (hours):</label>
             <input type="number" id="cancellation_period" name="cancellation_period" min="0" required><br>
+            <label for="image">Image:</label>
+            <input type="file" id="image" name="image" accept="image/jpeg, image/png" required><br>
             <button type="submit">Register</button>
         </form>
     </div>
