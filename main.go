@@ -127,7 +127,7 @@ func main() {
 
 	//FILESERVER
 	fileServer := http.FileServer(http.Dir("./static/"))
-	protectedFileServer := JWTMiddleware(apiCfg,true)(http.StripPrefix("/static", fileServer))
+	protectedFileServer := http.StripPrefix("/static", fileServer)
 	r.Handle("/static/*", protectedFileServer)
 
 	go func() {
