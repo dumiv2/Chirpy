@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -73,20 +76,20 @@ func main() {
 	r.Get("/login/owner", OwnerLoginHTMLHandler)
 	r.Post("/login/owner", OwnerLoginHandler(db, apiCfg))
 	//UPDATE
-	r.Post("/owner/profile/change_password", ChangeOwnerPasswordHandler(db, apiCfg))
-	r.Get("/owner/profile", OwnerProfileHTMLHandler) 
+	r.With(JWTMiddleware(apiCfg, true)).Post("/owner/profile/change_password", ChangeOwnerPasswordHandler(db, apiCfg))
+	r.With(JWTMiddleware(apiCfg, true)).Get("/owner/profile", OwnerProfileHTMLHandler) 
 	//DELETE
-	r.Post("/owner/profile/delete_account",DeleteOwnerHandler(db, apiCfg))
+	r.With(JWTMiddleware(apiCfg, true)).Post("/owner/profile/delete_account",DeleteOwnerHandler(db, apiCfg))
 
 	//PLAYGROUND
 	//CREATE
-	r.Post("/register/playground", RegisterPlaygroundHandler(db, apiCfg))
+	r.With(JWTMiddleware(apiCfg, true)).Post("/register/playground", RegisterPlaygroundHandler(db, apiCfg))
 	r.Get("/register/playground", ResPlayHTMLHandler)
 	//READ
 	r.Get("/", GetPlaygroundsHandler(db))
 	r.Get("/playgrounds/{id}", GetPlaygroundHandler(db))
 	//DELETE
-	r.Post("/playgrounds/{id}", DeletePlaygroundHandler(db, apiCfg))
+	r.With(JWTMiddleware(apiCfg, true)).Post("/playgrounds/{id}", DeletePlaygroundHandler(db, apiCfg))
 
 	//USER
 	//CREATE
@@ -95,21 +98,21 @@ func main() {
 	r.Get("/login/user", LoginUserHTMLHandler)
 	r.Post("/login/user", UserLoginHandler(db, apiCfg))
 	//UPDATE
-	r.Post("/user/profile/change_password", ChangePasswordHandler(db, apiCfg))
-	r.Get("/user/profile", UserProfileHTMLHandler)  
+	r.With(JWTMiddleware(apiCfg, false)).Post("/user/profile/change_password", ChangePasswordHandler(db, apiCfg))
+	r.With(JWTMiddleware(apiCfg, false)).Get("/user/profile", UserProfileHTMLHandler)  
 	//r.Put("/users",UpdateUserHandler(db,apiCfg))
 	//DELETE 
-	r.Post("/user/profile/delete_account",DeleteUserHandler(db, apiCfg))
+	r.With(JWTMiddleware(apiCfg, false)).Post("/user/profile/delete_account",DeleteUserHandler(db, apiCfg))
 
 
 	//BOOKING
 	//CREATE
-	r.Post("/booking", BookPlaygroundHandler(db, apiCfg))
+	r.With(JWTMiddleware(apiCfg, false)).Post("/booking", BookPlaygroundHandler(db, apiCfg))
 	r.Get("/booking", BookingHTMLHandler)
 	//READ
 	r.Get("/booking/{playgroundid}", GetBookingsForPlaygroundHandler(db))
 	//DELETE 
-	r.Post("/booking/delete",DeleteBookingHandler(db,apiCfg))
+	r.With(JWTMiddleware(apiCfg, false)).Post("/booking/delete",DeleteBookingHandler(db,apiCfg))
 
 	//LOGIN PAGE
 	r.Get("/login", LoginHTMLHandler)
@@ -121,9 +124,12 @@ func main() {
     r.Post("/reset_password", PasswordResetHandler(db, apiCfg))
 	r.Get("/reset_password", ResetPasswordHTMLHandler)
 	r.Get("/password_reset_request", PasswordResetRequesHTMLtHandler)
+
+	//FILESERVER
 	fileServer := http.FileServer(http.Dir("./static/"))
-	r.Handle("/static/*", http.StripPrefix("/static", fileServer))
-	
+	protectedFileServer := JWTMiddleware(apiCfg,true)(http.StripPrefix("/static", fileServer))
+	r.Handle("/static/*", protectedFileServer)
+
 	go func() {
 		for {
 			time.Sleep(15 * time.Minute)
@@ -135,9 +141,48 @@ func main() {
 	log.Println("Server started on port 8080")
 	http.ListenAndServe(":8080", r)
 }
+
 // SanitizeInput sanitizes user input to prevent XSS attacks.
 func SanitizeInput(input string) string {
     return template.HTMLEscapeString(input)
+}
+func JWTMiddleware(cfg apiConfig, isOwner bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			cookie, err := r.Cookie("token")
+			if err != nil {
+				if err == http.ErrNoCookie {
+					http.Error(w, "Missing token cookie", http.StatusUnauthorized)
+					return
+				}
+				http.Error(w, "Failed to get token from cookie", http.StatusBadRequest)
+				return
+			}
+
+			tokenString := cookie.Value
+
+			var claims jwt.Claims
+			if isOwner {
+				claims = &OwnerJWTClaims{}
+			} else {
+				claims = &JWTClaims{}
+			}
+
+			token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+				return []byte(cfg.jwtSecret), nil
+			})
+			if err != nil || !token.Valid {
+				http.Error(w, "Invalid token", http.StatusUnauthorized)
+				return
+			}
+
+			// Attach claims to the request context
+			ctx := context.WithValue(r.Context(), "user", claims)
+			r = r.WithContext(ctx)
+
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // PasswordResetRequestHandler handles password reset requests
@@ -426,21 +471,21 @@ func ChangeOwnerPasswordHandler(db *booking.DB, apiCfg apiConfig) http.HandlerFu
 
 // Define a function to render the page with header and footer templates
 func renderPage(w http.ResponseWriter, r *http.Request, content string) {
-	headerTemplate, err := ioutil.ReadFile("header.html")
+	headerTemplate, err := os.ReadFile("header.html")
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		log.Println("Failed to read header HTML file:", err)
 		return
 	}
 
-	footerTemplate, err := ioutil.ReadFile("footer.html")
+	footerTemplate, err := os.ReadFile("footer.html")
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		log.Println("Failed to read footer HTML file:", err)
 		return
 	}
 
-	contentTemplate, err := ioutil.ReadFile(content)
+	contentTemplate, err := os.ReadFile(content)
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		log.Println("Failed to read footer HTML file:", err)
@@ -881,6 +926,14 @@ type PlaygroundRegistration struct {
     CancellationPeriod int     `validate:"required"`
     PricePerHour       float64 `validate:"required,gt=0"`
 }
+func generateFilename() (string, error) {
+    randomBytes := make([]byte, 16)
+    _, err := rand.Read(randomBytes)
+    if err != nil {
+        return "", err
+    }
+    return hex.EncodeToString(randomBytes), nil
+}
 
 func RegisterPlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -941,9 +994,11 @@ func RegisterPlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
             http.Error(w, "No image file provided", http.StatusBadRequest)
             return
         }
-		// Validate the file type and size
+        defer file.Close()
+
+        // Validate the file type and size
         contentType := header.Header.Get("Content-Type")
-        if contentType != "image/jpeg" && contentType != "image/png" {
+        if contentType != "image/jpeg" && contentType != "image/png" && contentType != "image/jpg"{
             http.Error(w, "Invalid file type", http.StatusBadRequest)
             return
         }
@@ -954,12 +1009,20 @@ func RegisterPlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
         }
 
         // Sanitize the filename
-        filename := filepath.Base(header.Filename)
         allowedChars := regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
+        filename := filepath.Base(header.Filename)
         if !allowedChars.MatchString(filename) {
             http.Error(w, "Invalid filename", http.StatusBadRequest)
             return
         }
+
+        // Generate a new filename
+        newFilename, err := generateFilename()
+        if err != nil {
+            http.Error(w, "Failed to generate filename", http.StatusInternalServerError)
+            return
+        }
+        newFilename = newFilename + filepath.Ext(filename)
 
         // Read the file contents into a byte slice
         fileBytes, err := ioutil.ReadAll(file)
@@ -969,7 +1032,22 @@ func RegisterPlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
         }
 
         // Store the image securely
-        imagePath := filepath.Join("static", filename)
+        imagePath := filepath.Join("static", newFilename)
+        imagePath = filepath.Clean(imagePath)
+
+        // Check if the resulting path is within the "uploads" directory
+        uploadsDir, err := filepath.Abs("static")
+        if err != nil {
+            http.Error(w, "Server error", http.StatusInternalServerError)
+            return
+        }
+
+        imagePathAbs, err := filepath.Abs(imagePath)
+        if err != nil || !strings.HasPrefix(imagePathAbs, uploadsDir) {
+            http.Error(w, "Invalid file path", http.StatusBadRequest)
+            return
+        }
+
         err = os.WriteFile(imagePath, fileBytes, 0644)
         if err != nil {
             http.Error(w, "Failed to save image to server", http.StatusInternalServerError)
