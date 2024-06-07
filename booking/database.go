@@ -50,7 +50,8 @@ type Owner struct {
 type DB struct {
     path  string
     mux   *sync.RWMutex
-    maxID int
+	maxID     map[string]int // Map to store max IDs for each entity type
+
 }
 
 type DBStructure struct {
@@ -64,19 +65,59 @@ func NewDB(path string) (*DB, error) {
     db := &DB{
         path:  path,
         mux:   &sync.RWMutex{},
-        maxID: 0,
+        maxID: make(map[string]int), // Initialize maxID map to store max IDs for each entity type
     }
 
     if err := db.ensureDB(); err != nil {
         return nil, err
-
     }
+
+    // Load the existing data to determine the maximum ID for each entity type
+    dbStruct, err := db.loadDB()
+    if err != nil {
+        return nil, err
+    }
+
+    // Initialize maxID counters for each entity type
+    db.maxID["playground"] = 0
+    db.maxID["user"] = 0
+    db.maxID["owner"] = 0
+    db.maxID["booking"] = 0
+
+    // Iterate over all entities to find the maximum ID for each entity type
+    for _, playground := range dbStruct.Playgrounds {
+        if playground.ID > db.maxID["playground"] {
+            db.maxID["playground"] = playground.ID
+        }
+    }
+    for _, user := range dbStruct.Users {
+        if user.ID > db.maxID["user"] {
+            db.maxID["user"] = user.ID
+        }
+    }
+    for _, owner := range dbStruct.Owners {
+        if owner.ID > db.maxID["owner"] {
+            db.maxID["owner"] = owner.ID
+        }
+    }
+    for _, booking := range dbStruct.Bookings {
+        if booking.ID > db.maxID["booking"] {
+            db.maxID["booking"] = booking.ID
+        }
+    }
+
+    // Increment maxID for each entity type to prepare for the next ID
+    db.maxID["playground"]++
+    db.maxID["user"]++
+    db.maxID["owner"]++
+    db.maxID["booking"]++
 
     // Log a message indicating that the DB was successfully created
     log.Println("Database created successfully")
 
     return db, nil
 }
+
 
 func (db *DB) ensureDB() error {
     _, err := os.ReadFile("database.json")
@@ -124,8 +165,8 @@ func (db *DB) CreatePlayground(ownerID int, playground Playground) (Playground, 
 	db.mux.Lock()
 	defer db.mux.Unlock()
 
-	db.maxID++
-	playground.ID = db.maxID
+	db.maxID["playground"]++
+	playground.ID = db.maxID["playground"]
 	playground.OwnerID = ownerID
 
 	dbstruct, _ := db.loadDB()
@@ -226,14 +267,14 @@ func (db *DB) CreateOwner(name, email, password, phone, location string) (Owner,
 	db.mux.Lock()
 	defer db.mux.Unlock()
 
-	db.maxID++
+	db.maxID["owner"]++
     securedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
     if err != nil {
         log.Print("1")
 		return Owner{}, err
 	}
 	newOwner := Owner{
-		ID:             db.maxID,
+		ID:             db.maxID["owner"],
 		Name:           name,
 		Email:          email,
 		Password:       string(securedPassword),
@@ -264,14 +305,14 @@ func (db *DB) CreateUser(email, password string) (User, error) {
 	db.mux.Lock()
 	defer db.mux.Unlock()
 
-	db.maxID++
+	db.maxID["user"]++
 	securedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return User{}, err
 	}
 
 	newUser := User{
-		ID:       db.maxID,
+		ID:       db.maxID["user"],
 		Email:    email,
 		Password: string(securedPassword),
 	}
@@ -558,11 +599,11 @@ func (db *DB) CreateBooking(userID, playgroundID int, startTime, endTime time.Ti
 	}
 
 	// Increment the maximum booking ID
-	db.maxID++
+	db.maxID["booking"]++
 
 	// Create a new booking
 	booking := Booking{
-		ID:           db.maxID,
+		ID:           db.maxID["booking"],
 		UserID:       userID,
 		PlaygroundID: playgroundID,
 		StartTime:    startTime,
