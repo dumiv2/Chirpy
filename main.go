@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"crypto/rsa"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -77,9 +79,9 @@ func main() {
 	r.Post("/login/owner", OwnerLoginHandler(db, apiCfg))
 	//UPDATE
 	r.With(JWTMiddleware(apiCfg, true)).Post("/owner/profile/change_password", ChangeOwnerPasswordHandler(db, apiCfg))
-	r.With(JWTMiddleware(apiCfg, true)).Get("/owner/profile", OwnerProfileHTMLHandler) 
+	r.With(JWTMiddleware(apiCfg, true)).Get("/owner/profile", OwnerProfileHTMLHandler)
 	//DELETE
-	r.With(JWTMiddleware(apiCfg, true)).Post("/owner/profile/delete_account",DeleteOwnerHandler(db, apiCfg))
+	r.With(JWTMiddleware(apiCfg, true)).Post("/owner/profile/delete_account", DeleteOwnerHandler(db, apiCfg))
 
 	//PLAYGROUND
 	//CREATE
@@ -87,7 +89,7 @@ func main() {
 	r.Get("/register/playground", ResPlayHTMLHandler)
 	//READ
 	r.Get("/", GetPlaygroundsHandler(db))
-	r.Get("/playgrounds/{id}", GetPlaygroundHandler(db,apiCfg))
+	r.Get("/playgrounds/{id}", GetPlaygroundHandler(db, apiCfg))
 	//DELETE
 	r.With(JWTMiddleware(apiCfg, true)).Post("/playgrounds/{id}", DeletePlaygroundHandler(db, apiCfg))
 
@@ -99,11 +101,10 @@ func main() {
 	r.Post("/login/user", UserLoginHandler(db, apiCfg))
 	//UPDATE
 	r.With(JWTMiddleware(apiCfg, false)).Post("/user/profile/change_password", ChangePasswordHandler(db, apiCfg))
-	r.With(JWTMiddleware(apiCfg, false)).Get("/user/profile", UserProfileHTMLHandler)  
+	r.With(JWTMiddleware(apiCfg, false)).Get("/user/profile", UserProfileHTMLHandler)
 	//r.Put("/users",UpdateUserHandler(db,apiCfg))
-	//DELETE 
-	r.With(JWTMiddleware(apiCfg, false)).Post("/user/profile/delete_account",DeleteUserHandler(db, apiCfg))
-
+	//DELETE
+	r.With(JWTMiddleware(apiCfg, false)).Post("/user/profile/delete_account", DeleteUserHandler(db, apiCfg))
 
 	//BOOKING
 	//CREATE
@@ -111,17 +112,17 @@ func main() {
 	r.Get("/booking", BookingHTMLHandler)
 	//READ
 	r.Get("/booking/{playgroundid}", GetBookingsForPlaygroundHandler(db))
-	//DELETE 
-	r.With(JWTMiddleware(apiCfg, false)).Post("/booking/delete",DeleteBookingHandler(db,apiCfg))
+	//DELETE
+	r.With(JWTMiddleware(apiCfg, false)).Post("/booking/delete", DeleteBookingHandler(db, apiCfg))
 
 	//LOGIN PAGE
 	r.Get("/login", LoginHTMLHandler)
 	//SUCCESS PAGE
 	r.Get("/success", SuccessHTMLHandler)
-	
+
 	//FORGOT PASSWORD
 	r.Post("/password_reset_request", PasswordResetRequestHandler(db, apiCfg))
-    r.Post("/reset_password", PasswordResetHandler(db, apiCfg))
+	r.Post("/reset_password", PasswordResetHandler(db, apiCfg))
 	r.Get("/reset_password", ResetPasswordHTMLHandler)
 	r.Get("/password_reset_request", PasswordResetRequesHTMLtHandler)
 
@@ -144,22 +145,42 @@ func main() {
 
 // SanitizeInput sanitizes user input to prevent XSS attacks.
 func SanitizeInput(input string) string {
-    return template.HTMLEscapeString(input)
+	return template.HTMLEscapeString(input)
 }
 func JWTMiddleware(cfg apiConfig, isOwner bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
+
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			cookie, err := r.Cookie("token")
-			if err != nil {
-				if err == http.ErrNoCookie {
-					http.Error(w, "Missing token cookie", http.StatusUnauthorized)
-					return
-				}
-				http.Error(w, "Failed to get token from cookie", http.StatusBadRequest)
+			AuthCookie, authErr := r.Cookie("AuthToken")
+			if authErr == http.ErrNoCookie {
+				log.Println("Unauthorized attempt! No auth cookie")
+				nullifyTokenCookies(&w, r)
+				// http.Redirect(w, r, "/login", 302)
+				http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+				return
+			} else if authErr != nil {
+				log.Panic("panic: ", authErr)
+				nullifyTokenCookies(&w, r)
+				http.Error(w, http.StatusText(500), 500)
 				return
 			}
 
-			tokenString := cookie.Value
+			RefreshCookie, refreshErr := r.Cookie("RefreshToken")
+			if refreshErr == http.ErrNoCookie {
+				log.Println("Unauthorized attempt! No refresh cookie")
+				nullifyTokenCookies(&w, r)
+				http.Redirect(w, r, "/login", http.StatusFound)
+				return
+			} else if refreshErr != nil {
+				log.Panic("panic: ", refreshErr)
+				nullifyTokenCookies(&w, r)
+				http.Error(w, http.StatusText(500), 500)
+				return
+			}
+
+			// grab the csrf token
+			requestCsrfToken := grabCsrfFromReq(r)
+			log.Println(requestCsrfToken)
 
 			var claims jwt.Claims
 			if isOwner {
@@ -168,16 +189,32 @@ func JWTMiddleware(cfg apiConfig, isOwner bool) func(http.Handler) http.Handler 
 				claims = &JWTClaims{}
 			}
 
-			token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-				return []byte(cfg.jwtSecret), nil
-			})
-			if err != nil || !token.Valid {
-				http.Error(w, "Invalid token", http.StatusUnauthorized)
-				return
+			// check the jwt's for validity
+			authTokenString, refreshTokenString, csrfSecret, err := CheckAndRefreshTokens(AuthCookie.Value, RefreshCookie.Value, requestCsrfToken)
+			if err != nil {
+				if err.Error() == "Unauthorized" {
+					log.Println("Unauthorized attempt! JWT's not valid!")
+					// nullifyTokenCookies(&w, r)
+					// http.Redirect(w, r, "/login", 302)
+					http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+					return
+				} else {
+					log.Println("err not nil")
+					log.Panic("panic: ", err)
+					// nullifyTokenCookies(&w, r)
+					http.Error(w, http.StatusText(500), 500)
+					return
+				}
 			}
+			log.Println("Successfully recreated jwts")
+
+			setAuthAndRefreshCookies(&w, authTokenString, refreshTokenString)
+			w.Header().Set("X-CSRF-Token", csrfSecret)
 
 			// Attach claims to the request context
-			ctx := context.WithValue(r.Context(), "user", claims)
+			type ContextKey string
+			
+			ctx := context.WithValue(r.Context(), ContextKey("user"), claims)
 			r = r.WithContext(ctx)
 
 			next.ServeHTTP(w, r)
@@ -232,7 +269,7 @@ func generateResetToken(secret string, userID int) (string, error) {
 	return token.SignedString([]byte(secret))
 }
 
-// sendResetEmail sends a password reset email 
+// sendResetEmail sends a password reset email
 func sendResetEmail(email, token string) error {
 	from := os.Getenv("EMAIL")
 	password := os.Getenv("EMAIL_PASSWORD")
@@ -256,57 +293,56 @@ func sendResetEmail(email, token string) error {
 }
 
 func PasswordResetHandler(db *booking.DB, apiCfg apiConfig) http.HandlerFunc {
-    return func(w http.ResponseWriter, r *http.Request) {
-        // Parse the query parameters to get the token
-        resetToken := r.FormValue("token")
-        if resetToken == "" {
-            http.Error(w, "Token parameter is missing", http.StatusBadRequest)
-            return
-        }
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Parse the query parameters to get the token
+		resetToken := r.FormValue("token")
+		if resetToken == "" {
+			http.Error(w, "Token parameter is missing", http.StatusBadRequest)
+			return
+		}
 
-        // Get the new password from the form
-        newPassword := r.FormValue("newPassword")
-        if newPassword == "" {
-            http.Error(w, "New password is missing", http.StatusBadRequest)
-            return
-        }
+		// Get the new password from the form
+		newPassword := r.FormValue("newPassword")
+		if newPassword == "" {
+			http.Error(w, "New password is missing", http.StatusBadRequest)
+			return
+		}
 
-        // Verify the reset token
-        claims := jwt.MapClaims{}
-        token, err := jwt.ParseWithClaims(resetToken, claims, func(token *jwt.Token) (interface{}, error) {
-            return []byte(apiCfg.jwtSecret), nil
-        })
-        if err != nil || !token.Valid {
-            http.Error(w, "Invalid or expired reset token", http.StatusUnauthorized)
-            return
-        }
+		// Verify the reset token
+		claims := jwt.MapClaims{}
+		token, err := jwt.ParseWithClaims(resetToken, claims, func(token *jwt.Token) (interface{}, error) {
+			return []byte(apiCfg.jwtSecret), nil
+		})
+		if err != nil || !token.Valid {
+			http.Error(w, "Invalid or expired reset token", http.StatusUnauthorized)
+			return
+		}
 
-        // Ensure the token is for password reset
-        if claims["purpose"] != "password_reset" {
-            http.Error(w, "Invalid reset token purpose", http.StatusUnauthorized)
-            return
-        }
+		// Ensure the token is for password reset
+		if claims["purpose"] != "password_reset" {
+			http.Error(w, "Invalid reset token purpose", http.StatusUnauthorized)
+			return
+		}
 
-        userID, ok := claims["user_id"].(float64)
-        if !ok {
-            http.Error(w, "Invalid reset token claims", http.StatusUnauthorized)
-            return
-        }
+		userID, ok := claims["user_id"].(float64)
+		if !ok {
+			http.Error(w, "Invalid reset token claims", http.StatusUnauthorized)
+			return
+		}
 
-        // Update the user's password
-        _, err = db.UpdateUserPassword(int(userID), newPassword)
-        if err != nil {
-            http.Error(w, "Failed to update password: "+err.Error(), http.StatusInternalServerError)
-            return
-        }
+		// Update the user's password
+		_, err = db.UpdateUserPassword(int(userID), newPassword)
+		if err != nil {
+			http.Error(w, "Failed to update password: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 
-        http.Redirect(w, r, "/success?messageType=passwordResetSuccess", http.StatusSeeOther)
-    }
+		http.Redirect(w, r, "/success?messageType=passwordResetSuccess", http.StatusSeeOther)
+	}
 }
 
-
 func ChangePasswordHandler(db *booking.DB, apiCfg apiConfig) http.HandlerFunc {
-    return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
 		// Extract the JWT token from the request cookies
 		cookie, err := r.Cookie("token")
 		if err != nil {
@@ -344,48 +380,49 @@ func ChangePasswordHandler(db *booking.DB, apiCfg apiConfig) http.HandlerFunc {
 
 		userID := int(userIDFloat64)
 
-        user, err := db.GetUserById(int(userID))
+		user, err := db.GetUserById(int(userID))
 		if err != nil {
-            http.Error(w, "User not found", http.StatusNotFound)
-            return
-        }
-        // Parse form data
-        if err := r.ParseForm(); err != nil {
-            http.Error(w, "Invalid form data", http.StatusBadRequest)
-            return
-        }
+			http.Error(w, "User not found", http.StatusNotFound)
+			return
+		}
+		// Parse form data
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Invalid form data", http.StatusBadRequest)
+			return
+		}
 
-        currentPassword := r.FormValue("current_password")
-        newPassword := r.FormValue("new_password")
-        if currentPassword == "" || newPassword == "" {
-            http.Error(w, "Both current and new passwords are required", http.StatusBadRequest)
-            return
-        }
+		currentPassword := r.FormValue("current_password")
+		newPassword := r.FormValue("new_password")
+		if currentPassword == "" || newPassword == "" {
+			http.Error(w, "Both current and new passwords are required", http.StatusBadRequest)
+			return
+		}
 
-        // Verify the old password
-        err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(currentPassword))
-        if err != nil {
-            http.Error(w, "Old password is incorrect", http.StatusUnauthorized)
-            return
-			
-        }
+		// Verify the old password
+		err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(currentPassword))
+		if err != nil {
+			http.Error(w, "Old password is incorrect", http.StatusUnauthorized)
+			return
 
-        // Check password complexity (if you want to enforce it on updates)
-        if err := checkPasswordComplexity(newPassword); err != nil {
-            http.Error(w, err.Error(), http.StatusBadRequest)
-            return
-        }
+		}
 
-        // Update the user's password
-        _, err = db.UpdateUserPassword(int(userID), newPassword)
-        if err != nil {
-            http.Error(w, "Failed to update password: "+err.Error(), http.StatusInternalServerError)
-            return
-        }
+		// Check password complexity (if you want to enforce it on updates)
+		if err := checkPasswordComplexity(newPassword); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 
-        http.Redirect(w, r, "/success?messageType=passwordChangeSuccess", http.StatusSeeOther)
-    }
+		// Update the user's password
+		_, err = db.UpdateUserPassword(int(userID), newPassword)
+		if err != nil {
+			http.Error(w, "Failed to update password: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		http.Redirect(w, r, "/success?messageType=passwordChangeSuccess", http.StatusSeeOther)
+	}
 }
+
 // ChangeOwnerPasswordHandler handles password changes for owners
 func ChangeOwnerPasswordHandler(db *booking.DB, apiCfg apiConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -519,86 +556,86 @@ func BookingHTMLHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 func UserProfileHTMLHandler(w http.ResponseWriter, r *http.Request) {
-    // Serve the HTML form for changing the password
-    renderPage(w, r, "profile_user.html")
+	// Serve the HTML form for changing the password
+	renderPage(w, r, "profile_user.html")
 }
 func OwnerProfileHTMLHandler(w http.ResponseWriter, r *http.Request) {
-    // Serve the HTML form for changing the password
-    renderPage(w, r, "profile_owner.html")
+	// Serve the HTML form for changing the password
+	renderPage(w, r, "profile_owner.html")
 }
 func PasswordResetRequesHTMLtHandler(w http.ResponseWriter, r *http.Request) {
-    // Serve the HTML form for changing the password
-    renderPage(w, r, "passwordreset_request.html")
+	// Serve the HTML form for changing the password
+	renderPage(w, r, "passwordreset_request.html")
 }
 func ResetPasswordHTMLHandler(w http.ResponseWriter, r *http.Request) {
-        // Extract the token from the URL query parameters
-		token := r.URL.Query().Get("token")
+	// Extract the token from the URL query parameters
+	token := r.URL.Query().Get("token")
 
-		// Pass the token to the HTML template
-		data := struct {
-			Token string
-		}{
-			Token: token,
-		}
+	// Pass the token to the HTML template
+	data := struct {
+		Token string
+	}{
+		Token: token,
+	}
 
-		    // Render the HTML template with the token value
-			tmpl, err := template.ParseFiles("password_reset.html")
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
+	// Render the HTML template with the token value
+	tmpl, err := template.ParseFiles("password_reset.html")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
-			err = tmpl.Execute(w ,data)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
+	err = tmpl.Execute(w, data)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 func SuccessHTMLHandler(w http.ResponseWriter, r *http.Request) {
-    messageType := r.URL.Query().Get("messageType")
-    continueURL := "/" // Default redirect URL (adjust as needed)
+	messageType := r.URL.Query().Get("messageType")
+	continueURL := "/" // Default redirect URL (adjust as needed)
 
-    // Data to be passed to the template
-    data := struct {
-        Message     string
-        ContinueURL string
-    }{}
+	// Data to be passed to the template
+	data := struct {
+		Message     string
+		ContinueURL string
+	}{}
 
-    switch messageType {
-    case "userRegister":
-        data.Message = "Congratulations, your account has been successfully created."
-        data.ContinueURL = "/" 
-    case "playgroundRegister":
-        data.Message = "Your playground has been successfully registered."
-        data.ContinueURL = "/" 
-    case "bookingSuccess":
-        data.Message = "Your booking was successful!"
-        data.ContinueURL = "/" 
+	switch messageType {
+	case "userRegister":
+		data.Message = "Congratulations, your account has been successfully created."
+		data.ContinueURL = "/"
+	case "playgroundRegister":
+		data.Message = "Your playground has been successfully registered."
+		data.ContinueURL = "/"
+	case "bookingSuccess":
+		data.Message = "Your booking was successful!"
+		data.ContinueURL = "/"
 	case "loginSuccess":
-        data.Message = "Your login was successful!"
-        data.ContinueURL = "/" 
-	case "passwordResetSuccess" :
+		data.Message = "Your login was successful!"
+		data.ContinueURL = "/"
+	case "passwordResetSuccess":
 		data.Message = "Your password has been successfully reset."
-		data.ContinueURL = "/" 
+		data.ContinueURL = "/"
 
-    default:
-        data.Message = "Success!"
+	default:
+		data.Message = "Success!"
 		data.ContinueURL = continueURL
-    }
+	}
 
-    // Parse and execute the success.html template
-    tmpl, err := template.ParseFiles("success.html")
-    if err != nil {
-        http.Error(w, "Failed to parse HTML template: "+err.Error(), http.StatusInternalServerError)
-        return
-    }
+	// Parse and execute the success.html template
+	tmpl, err := template.ParseFiles("success.html")
+	if err != nil {
+		http.Error(w, "Failed to parse HTML template: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 
-    err = tmpl.Execute(w, data)
-    if err != nil {
-        http.Error(w, "Failed to execute HTML template: "+err.Error(), http.StatusInternalServerError)
-        return
-    }
+	err = tmpl.Execute(w, data)
+	if err != nil {
+		http.Error(w, "Failed to execute HTML template: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 func OwnerLoginHTMLHandler(w http.ResponseWriter, r *http.Request) {
@@ -673,20 +710,20 @@ func checkPasswordComplexity(password string) error {
 
 	return nil
 }
+
 type OwnerRegistration struct {
-    Name     string `validate:"required,min=2,max=20"`
-    Email    string `validate:"required,email"`
-    Password string `validate:"required,min=8,max=20"`
-    Phone    string `validate:"required"`
-    Location string `validate:"required"`
+	Name     string `validate:"required,min=2,max=20"`
+	Email    string `validate:"required,email"`
+	Password string `validate:"required,min=8,max=20"`
+	Phone    string `validate:"required"`
+	Location string `validate:"required"`
 }
+
 var validate *validator.Validate
 
 func init() {
-    validate = validator.New()
+	validate = validator.New()
 }
-
-
 
 func RegisterOwnerHandler(db *booking.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -705,21 +742,21 @@ func RegisterOwnerHandler(db *booking.DB) http.HandlerFunc {
 		phone := SanitizeInput(r.FormValue("phone"))
 		location := SanitizeInput(r.FormValue("location"))
 
-        // Extract owner data from the form
-        owner := OwnerRegistration{
-            Name:     name,
-            Email:    email,
-            Password: password,
-            Phone:    phone,
-            Location: location,
-        }
-		       // Validate the owner data
-			   err = validate.Struct(owner)
-			   if err != nil {
-				   http.Error(w, "Invalid input: "+err.Error(), http.StatusBadRequest)
-				   log.Println("Invalid input:", err)
-				   return
-			   }
+		// Extract owner data from the form
+		owner := OwnerRegistration{
+			Name:     name,
+			Email:    email,
+			Password: password,
+			Phone:    phone,
+			Location: location,
+		}
+		// Validate the owner data
+		err = validate.Struct(owner)
+		if err != nil {
+			http.Error(w, "Invalid input: "+err.Error(), http.StatusBadRequest)
+			log.Println("Invalid input:", err)
+			return
+		}
 
 		// Kiểm tra độ phức tạp mật khẩu
 		if err := checkPasswordComplexity(password); err != nil {
@@ -761,8 +798,8 @@ func RegisterOwnerHTMLHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type UserRegistration struct {
-    Email    string `validate:"required,email"`
-    Password string `validate:"required,min=8,max=20"`
+	Email    string `validate:"required,email"`
+	Password string `validate:"required,min=8,max=20"`
 }
 
 func RegisterUserHandler(db *booking.DB) http.HandlerFunc {
@@ -779,19 +816,19 @@ func RegisterUserHandler(db *booking.DB) http.HandlerFunc {
 		email := SanitizeInput(r.FormValue("email"))
 		password := r.FormValue("password")
 
-		        // Extract user data from the form
-				user := UserRegistration{
-					Email:    email,
-					Password: password,
-				}
+		// Extract user data from the form
+		user := UserRegistration{
+			Email:    email,
+			Password: password,
+		}
 
-        // Validate the user data
-        err = validate.Struct(user)
-        if err != nil {
-            http.Error(w, "Invalid input: "+err.Error(), http.StatusBadRequest)
-            log.Println("Invalid input:", err)
-            return
-        }
+		// Validate the user data
+		err = validate.Struct(user)
+		if err != nil {
+			http.Error(w, "Invalid input: "+err.Error(), http.StatusBadRequest)
+			log.Println("Invalid input:", err)
+			return
+		}
 
 		// Kiểm tra độ phức tạp mật khẩu
 		if err := checkPasswordComplexity(password); err != nil {
@@ -820,7 +857,7 @@ func RegisterUserHandler(db *booking.DB) http.HandlerFunc {
 }
 
 // DeleteUserHandler handles deleting a user account
-func DeleteUserHandler(db *booking.DB , apiCfg apiConfig ) http.HandlerFunc {
+func DeleteUserHandler(db *booking.DB, apiCfg apiConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Extract the JWT token from the request cookies
 		cookie, err := r.Cookie("token")
@@ -918,21 +955,23 @@ func DeleteOwnerHandler(db *booking.DB, apiCfg apiConfig) http.HandlerFunc {
 		http.Redirect(w, r, "/success?messageType=accountDeleteSuccess", http.StatusSeeOther)
 	}
 }
+
 type PlaygroundRegistration struct {
-    Name               string  `validate:"required"`
-    Location           string  `validate:"required"`
-    Size               string  `validate:"required"`
-    AvailableHours     string  `validate:"required"`
-    CancellationPeriod int     `validate:"required"`
-    PricePerHour       float64 `validate:"required,gt=0"`
+	Name               string  `validate:"required"`
+	Location           string  `validate:"required"`
+	Size               string  `validate:"required"`
+	AvailableHours     string  `validate:"required"`
+	CancellationPeriod int     `validate:"required"`
+	PricePerHour       float64 `validate:"required,gt=0"`
 }
+
 func generateFilename() (string, error) {
-    randomBytes := make([]byte, 16)
-    _, err := rand.Read(randomBytes)
-    if err != nil {
-        return "", err
-    }
-    return hex.EncodeToString(randomBytes), nil
+	randomBytes := make([]byte, 16)
+	_, err := rand.Read(randomBytes)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(randomBytes), nil
 }
 
 func RegisterPlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
@@ -982,77 +1021,77 @@ func RegisterPlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 		}
 
 		// Parse form data from the request
-        err = r.ParseMultipartForm(32 << 20) // 32MB max file size
-        if err != nil {
-            http.Error(w, "Invalid form data", http.StatusBadRequest)
-            return
-        }
+		err = r.ParseMultipartForm(32 << 20) // 32MB max file size
+		if err != nil {
+			http.Error(w, "Invalid form data", http.StatusBadRequest)
+			return
+		}
 
-        // Get the image file from the form data
-        file, header, err := r.FormFile("image")
-        if err != nil {
-            http.Error(w, "No image file provided", http.StatusBadRequest)
-            return
-        }
-        defer file.Close()
+		// Get the image file from the form data
+		file, header, err := r.FormFile("image")
+		if err != nil {
+			http.Error(w, "No image file provided", http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
 
-        // Validate the file type and size
-        contentType := header.Header.Get("Content-Type")
-        if contentType != "image/jpeg" && contentType != "image/png" && contentType != "image/jpg"{
-            http.Error(w, "Invalid file type", http.StatusBadRequest)
-            return
-        }
+		// Validate the file type and size
+		contentType := header.Header.Get("Content-Type")
+		if contentType != "image/jpeg" && contentType != "image/png" && contentType != "image/jpg" {
+			http.Error(w, "Invalid file type", http.StatusBadRequest)
+			return
+		}
 
-        if header.Size > 1024*1024*5 { // 5MB max file size
-            http.Error(w, "File too large", http.StatusBadRequest)
-            return
-        }
+		if header.Size > 1024*1024*5 { // 5MB max file size
+			http.Error(w, "File too large", http.StatusBadRequest)
+			return
+		}
 
-        // Sanitize the filename
-        allowedChars := regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
-        filename := filepath.Base(header.Filename)
-        if !allowedChars.MatchString(filename) {
-            http.Error(w, "Invalid filename", http.StatusBadRequest)
-            return
-        }
+		// Sanitize the filename
+		allowedChars := regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
+		filename := filepath.Base(header.Filename)
+		if !allowedChars.MatchString(filename) {
+			http.Error(w, "Invalid filename", http.StatusBadRequest)
+			return
+		}
 
-        // Generate a new filename
-        newFilename, err := generateFilename()
-        if err != nil {
-            http.Error(w, "Failed to generate filename", http.StatusInternalServerError)
-            return
-        }
-        newFilename = newFilename + filepath.Ext(filename)
+		// Generate a new filename
+		newFilename, err := generateFilename()
+		if err != nil {
+			http.Error(w, "Failed to generate filename", http.StatusInternalServerError)
+			return
+		}
+		newFilename = newFilename + filepath.Ext(filename)
 
-        // Read the file contents into a byte slice
-        fileBytes, err := ioutil.ReadAll(file)
-        if err != nil {
-            http.Error(w, "Failed to read file", http.StatusInternalServerError)
-            return
-        }
+		// Read the file contents into a byte slice
+		fileBytes, err := ioutil.ReadAll(file)
+		if err != nil {
+			http.Error(w, "Failed to read file", http.StatusInternalServerError)
+			return
+		}
 
-        // Store the image securely
-        imagePath := filepath.Join("static", newFilename)
-        imagePath = filepath.Clean(imagePath)
+		// Store the image securely
+		imagePath := filepath.Join("static", newFilename)
+		imagePath = filepath.Clean(imagePath)
 
-        // Check if the resulting path is within the "uploads" directory
-        uploadsDir, err := filepath.Abs("static")
-        if err != nil {
-            http.Error(w, "Server error", http.StatusInternalServerError)
-            return
-        }
+		// Check if the resulting path is within the "uploads" directory
+		uploadsDir, err := filepath.Abs("static")
+		if err != nil {
+			http.Error(w, "Server error", http.StatusInternalServerError)
+			return
+		}
 
-        imagePathAbs, err := filepath.Abs(imagePath)
-        if err != nil || !strings.HasPrefix(imagePathAbs, uploadsDir) {
-            http.Error(w, "Invalid file path", http.StatusBadRequest)
-            return
-        }
+		imagePathAbs, err := filepath.Abs(imagePath)
+		if err != nil || !strings.HasPrefix(imagePathAbs, uploadsDir) {
+			http.Error(w, "Invalid file path", http.StatusBadRequest)
+			return
+		}
 
-        err = os.WriteFile(imagePath, fileBytes, 0644)
-        if err != nil {
-            http.Error(w, "Failed to save image to server", http.StatusInternalServerError)
-            return
-        }
+		err = os.WriteFile(imagePath, fileBytes, 0644)
+		if err != nil {
+			http.Error(w, "Failed to save image to server", http.StatusInternalServerError)
+			return
+		}
 
 		// Extract playground data from the form
 		name := SanitizeInput(r.FormValue("name"))
@@ -1060,53 +1099,52 @@ func RegisterPlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 		size := SanitizeInput(r.FormValue("size"))
 		startTime := SanitizeInput(r.FormValue("start_time"))
 		endTime := SanitizeInput(r.FormValue("end_time"))
-		
+
 		// Construct the availableHours string
-		availableHours := fmt.Sprintf("%s - %s", startTime, endTime)		
+		availableHours := fmt.Sprintf("%s - %s", startTime, endTime)
 		cancellation_period := SanitizeInput(r.FormValue("cancellation_period"))
 		price_per_hour := SanitizeInput(r.FormValue("price_per_hour"))
 		price_per_hour_float, _ := strconv.ParseFloat(strings.TrimSpace(price_per_hour), 64)
 		cancellation_period_int, _ := strconv.Atoi(cancellation_period)
 
-        // Extract playground data from the form
-        playground := booking.Playground{
-            Name:           name,
-            Location:       location,
-            Size:           size,
-            AvailableHours: availableHours,
-			Image: imagePath,
+		// Extract playground data from the form
+		playground := booking.Playground{
+			Name:           name,
+			Location:       location,
+			Size:           size,
+			AvailableHours: availableHours,
+			Image:          imagePath,
+		}
 
-        }
-
-        // Parse cancellation period with error handling
-        cancellationPeriodStr := SanitizeInput(r.FormValue("cancellation_period"))
-        if cancellationPeriodStr != "" { // Check if the field is empty
-            var err error
-            playground.CancellationPeriod, err = strconv.Atoi(cancellationPeriodStr)
-            if err != nil {
-                http.Error(w, "Invalid cancellation period", http.StatusBadRequest)
-                return
-            }
-        }
-
-        // Parse price per hour with error handling
-        pricePerHourStr := SanitizeInput(r.FormValue("price_per_hour"))
-        if pricePerHourStr != "" {  // Check if the field is empty
-            var err error
-            playground.PricePerHour, err = strconv.ParseFloat(pricePerHourStr, 64)
-            if err != nil {
-                http.Error(w, "Invalid price per hour", http.StatusBadRequest)
-                return
-            }
-        }
-	
-			// Validate the playground data
-			err = validate.Struct(playground)
+		// Parse cancellation period with error handling
+		cancellationPeriodStr := SanitizeInput(r.FormValue("cancellation_period"))
+		if cancellationPeriodStr != "" { // Check if the field is empty
+			var err error
+			playground.CancellationPeriod, err = strconv.Atoi(cancellationPeriodStr)
 			if err != nil {
-				http.Error(w, "Invalid input: "+err.Error(), http.StatusBadRequest)
-				log.Println("Invalid input:", err)
+				http.Error(w, "Invalid cancellation period", http.StatusBadRequest)
 				return
 			}
+		}
+
+		// Parse price per hour with error handling
+		pricePerHourStr := SanitizeInput(r.FormValue("price_per_hour"))
+		if pricePerHourStr != "" { // Check if the field is empty
+			var err error
+			playground.PricePerHour, err = strconv.ParseFloat(pricePerHourStr, 64)
+			if err != nil {
+				http.Error(w, "Invalid price per hour", http.StatusBadRequest)
+				return
+			}
+		}
+
+		// Validate the playground data
+		err = validate.Struct(playground)
+		if err != nil {
+			http.Error(w, "Invalid input: "+err.Error(), http.StatusBadRequest)
+			log.Println("Invalid input:", err)
+			return
+		}
 		// Create the playground
 		_, err = db.CreatePlayground(ownerID, booking.Playground{
 			Name:               name,
@@ -1116,8 +1154,7 @@ func RegisterPlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 			CancellationPeriod: cancellation_period_int,
 			PricePerHour:       price_per_hour_float,
 			OwnerID:            ownerID,
-			Image: imagePath,
-
+			Image:              imagePath,
 		})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -1125,92 +1162,92 @@ func RegisterPlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 		}
 
 		http.Redirect(w, r, "/success?messageType=playgroundRegister", http.StatusSeeOther)
-		
+
 	}
 }
 
 func GetPlaygroundsHandler(db *booking.DB) http.HandlerFunc {
-    return func(w http.ResponseWriter, r *http.Request) {
-        playgrounds, err := db.GetAllPlaygrounds()
-        if err != nil {
-            http.Error(w, "Failed to get playgrounds: "+err.Error(), http.StatusInternalServerError)
-            return
-        }
+	return func(w http.ResponseWriter, r *http.Request) {
+		playgrounds, err := db.GetAllPlaygrounds()
+		if err != nil {
+			http.Error(w, "Failed to get playgrounds: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 
-        // Parse the HTML template
-        tmpl, err := template.ParseFiles("playgrounds.html")
-        if err != nil {
-            http.Error(w, "Failed to parse HTML template: "+err.Error(), http.StatusInternalServerError)
-            return
-        }
+		// Parse the HTML template
+		tmpl, err := template.ParseFiles("playgrounds.html")
+		if err != nil {
+			http.Error(w, "Failed to parse HTML template: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 
-        // Define a custom template function for HTML escaping
-        funcMap := template.FuncMap{
-            "safeHTML": func(s string) template.HTML {
-                return template.HTML(html.EscapeString(s))
-            },
-        }
+		// Define a custom template function for HTML escaping
+		funcMap := template.FuncMap{
+			"safeHTML": func(s string) template.HTML {
+				return template.HTML(html.EscapeString(s))
+			},
+		}
 
-        // Associate the custom function map with the template
-        tmpl = tmpl.Funcs(funcMap)
+		// Associate the custom function map with the template
+		tmpl = tmpl.Funcs(funcMap)
 
-        // Execute the HTML template with the playgrounds data
-        err = tmpl.Execute(w, playgrounds)
-        if err != nil {
-            http.Error(w, "Failed to execute HTML template: "+err.Error(), http.StatusInternalServerError)
-            return
-        }
-    }
+		// Execute the HTML template with the playgrounds data
+		err = tmpl.Execute(w, playgrounds)
+		if err != nil {
+			http.Error(w, "Failed to execute HTML template: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
 }
 
 func GetPlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
-    return func(w http.ResponseWriter, r *http.Request) {
-        idStr := chi.URLParam(r, "id")
-        id, err := strconv.Atoi(idStr)
-        if err != nil {
-            http.Error(w, "Invalid playground ID: "+err.Error(), http.StatusBadRequest)
-            return
-        }
+	return func(w http.ResponseWriter, r *http.Request) {
+		idStr := chi.URLParam(r, "id")
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			http.Error(w, "Invalid playground ID: "+err.Error(), http.StatusBadRequest)
+			return
+		}
 
-        playground, err := db.GetPlaygroundByID(id)
-        if err != nil {
-            http.Error(w, "Failed to get playground: "+err.Error(), http.StatusNotFound)
-            return
-        }
+		playground, err := db.GetPlaygroundByID(id)
+		if err != nil {
+			http.Error(w, "Failed to get playground: "+err.Error(), http.StatusNotFound)
+			return
+		}
 
-        // Check if the authenticated user is the owner of the playground
-        cookie, err := r.Cookie("token")
-        if err == nil {
-            tokenString := cookie.Value
-            token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-                return []byte(cfg.jwtSecret), nil
-            })
-            if err == nil && token.Valid {
-                claims, ok := token.Claims.(jwt.MapClaims)
-                if ok {
-                    ownerIDFloat64, ok := claims["owner_id"].(float64)
-                    if ok {
-                        ownerID := int(ownerIDFloat64)
-                        if playground.OwnerID == ownerID {
-                            playground.CanDelete = true
-                        }
-                    }
-                }
-            }
-        }
+		// Check if the authenticated user is the owner of the playground
+		cookie, err := r.Cookie("token")
+		if err == nil {
+			tokenString := cookie.Value
+			token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+				return []byte(cfg.jwtSecret), nil
+			})
+			if err == nil && token.Valid {
+				claims, ok := token.Claims.(jwt.MapClaims)
+				if ok {
+					ownerIDFloat64, ok := claims["owner_id"].(float64)
+					if ok {
+						ownerID := int(ownerIDFloat64)
+						if playground.OwnerID == ownerID {
+							playground.CanDelete = true
+						}
+					}
+				}
+			}
+		}
 
-        tmpl, err := template.ParseFiles("playground.html")
-        if err != nil {
-            http.Error(w, "Failed to parse HTML template: "+err.Error(), http.StatusInternalServerError)
-            return
-        }
+		tmpl, err := template.ParseFiles("playground.html")
+		if err != nil {
+			http.Error(w, "Failed to parse HTML template: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 
-        err = tmpl.Execute(w, playground)
-        if err != nil {
-            http.Error(w, "Failed to execute HTML template: "+err.Error(), http.StatusInternalServerError)
-            return
-        }
-    }
+		err = tmpl.Execute(w, playground)
+		if err != nil {
+			http.Error(w, "Failed to execute HTML template: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
 }
 
 var loginAttempts = make(map[string]int)
@@ -1505,11 +1542,10 @@ func DeletePlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 }
 
 type BookingRequest struct {
-    PlaygroundID int    `validate:"required,gt=0"`
-    StartTime    string `validate:"required"`
-    Duration     int    `validate:"required,gt=0"`
+	PlaygroundID int    `validate:"required,gt=0"`
+	StartTime    string `validate:"required"`
+	Duration     int    `validate:"required,gt=0"`
 }
-
 
 func BookPlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -1568,21 +1604,21 @@ func BookPlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 			http.Error(w, "Invalid duration", http.StatusBadRequest)
 			return
 		}
-		
-		        // Extract booking data from the form
-				bookingRequest := BookingRequest{
-					PlaygroundID: playgroundID,
-					StartTime:    r.Form.Get("start_time"),
-					Duration:     duration,
-				}
-		
-				// Validate the booking request
-				err = validate.Struct(bookingRequest)
-				if err != nil {
-					http.Error(w, "Invalid input: "+err.Error(), http.StatusBadRequest)
-					log.Println("Invalid input:", err)
-					return
-				}
+
+		// Extract booking data from the form
+		bookingRequest := BookingRequest{
+			PlaygroundID: playgroundID,
+			StartTime:    r.Form.Get("start_time"),
+			Duration:     duration,
+		}
+
+		// Validate the booking request
+		err = validate.Struct(bookingRequest)
+		if err != nil {
+			http.Error(w, "Invalid input: "+err.Error(), http.StatusBadRequest)
+			log.Println("Invalid input:", err)
+			return
+		}
 		// Validate the booking request
 		if startTime.Before(time.Now()) {
 			http.Error(w, "Booking start time must be in the future", http.StatusBadRequest)
@@ -1663,83 +1699,442 @@ func GetBookingsForPlaygroundHandler(db *booking.DB) http.HandlerFunc {
 }
 
 func DeleteBookingHandler(db *booking.DB, apiCfg apiConfig) http.HandlerFunc {
-    return func(w http.ResponseWriter, r *http.Request) {
-        // Extract the JWT token from the request cookies
-        cookie, err := r.Cookie("token")
-        if err != nil {
-            if err == http.ErrNoCookie {
-                http.Error(w, "Missing token cookie", http.StatusUnauthorized)
-                return
-            }
-            http.Error(w, "Failed to get token from cookie", http.StatusBadRequest)
-            return
-        }
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Extract the JWT token from the request cookies
+		cookie, err := r.Cookie("token")
+		if err != nil {
+			if err == http.ErrNoCookie {
+				http.Error(w, "Missing token cookie", http.StatusUnauthorized)
+				return
+			}
+			http.Error(w, "Failed to get token from cookie", http.StatusBadRequest)
+			return
+		}
 
-        tokenString := cookie.Value
+		tokenString := cookie.Value
 
-        // Validate the JWT token
-        token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-            return []byte(apiCfg.jwtSecret), nil
-        })
-        if err != nil || !token.Valid {
-            http.Error(w, "Invalid token", http.StatusUnauthorized)
-            return
-        }
+		// Validate the JWT token
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			return []byte(apiCfg.jwtSecret), nil
+		})
+		if err != nil || !token.Valid {
+			http.Error(w, "Invalid token", http.StatusUnauthorized)
+			return
+		}
 
-        // Extract user ID from the token claims
-        claims, ok := token.Claims.(jwt.MapClaims)
-        if !ok {
-            http.Error(w, "Invalid token claims", http.StatusUnauthorized)
-            return
-        }
+		// Extract user ID from the token claims
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			http.Error(w, "Invalid token claims", http.StatusUnauthorized)
+			return
+		}
 
-        userIDFloat64, ok := claims["user_id"].(float64)
-        if !ok {
-            http.Error(w, "Invalid user ID in token claims", http.StatusUnauthorized)
-            return
-        }
+		userIDFloat64, ok := claims["user_id"].(float64)
+		if !ok {
+			http.Error(w, "Invalid user ID in token claims", http.StatusUnauthorized)
+			return
+		}
 
-        userID := int(userIDFloat64)
+		userID := int(userIDFloat64)
 
-        // Parse form data
-        if err := r.ParseForm(); err != nil {
-            http.Error(w, "Invalid form data", http.StatusBadRequest)
-            return
-        }
+		// Parse form data
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Invalid form data", http.StatusBadRequest)
+			return
+		}
 
-        bookingID := r.FormValue("booking_id")
-        if bookingID == "" {
-            http.Error(w, "Booking ID is required", http.StatusBadRequest)
-            return
-        }
+		bookingID := r.FormValue("booking_id")
+		if bookingID == "" {
+			http.Error(w, "Booking ID is required", http.StatusBadRequest)
+			return
+		}
 
-        // Parse the booking ID as an integer
-        bookingIDint, err := strconv.Atoi(bookingID)
-        if err != nil {
-            http.Error(w, "Invalid booking ID", http.StatusBadRequest)
-            return
-        }
-        // Fetch the booking from the database
-        booking, err := db.GetBookingByID(bookingIDint)
-        if err != nil {
-            http.Error(w, "Failed to fetch booking: "+err.Error(), http.StatusInternalServerError)
-            return
-        }
+		// Parse the booking ID as an integer
+		bookingIDint, err := strconv.Atoi(bookingID)
+		if err != nil {
+			http.Error(w, "Invalid booking ID", http.StatusBadRequest)
+			return
+		}
+		// Fetch the booking from the database
+		booking, err := db.GetBookingByID(bookingIDint)
+		if err != nil {
+			http.Error(w, "Failed to fetch booking: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 
-        // Check if the booking belongs to the user
-        if booking.UserID != userID {
-            http.Error(w, "Unauthorized", http.StatusUnauthorized)
-            return
-        }
+		// Check if the booking belongs to the user
+		if booking.UserID != userID {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
 
-        // Delete the booking
-        err = db.DeleteBooking(bookingIDint)
-        if err != nil {
-            http.Error(w, "Failed to delete booking: "+err.Error(), http.StatusInternalServerError)
-            return
-        }
+		// Delete the booking
+		err = db.DeleteBooking(bookingIDint)
+		if err != nil {
+			http.Error(w, "Failed to delete booking: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 
-        http.Redirect(w, r, "/success?messageType=bookingDeletionSuccess", http.StatusSeeOther)
-    }
+		http.Redirect(w, r, "/success?messageType=bookingDeletionSuccess", http.StatusSeeOther)
+	}
 }
 
+func GenerateRandomBytes(n int) ([]byte, error) {
+	b := make([]byte, n)
+	_, err := rand.Read(b)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return b, nil
+}
+
+func GenerateRandomString(s int) (string, error) {
+	b, err := GenerateRandomBytes(s)
+	return base64.URLEncoding.EncodeToString(b), err
+}
+
+type TokenClaims struct {
+	jwt.StandardClaims
+	Role string `json:"role"`
+	Csrf string `json:"csrf"`
+}
+
+const (
+	privKeyPath = "keys/app.rsa"
+	pubKeyPath  = "keys/app.rsa.pub"
+)
+
+var (
+	verifyKey *rsa.PublicKey
+	signKey   *rsa.PrivateKey
+)
+
+var refreshTokens map[string]string
+
+const RefreshTokenValidTime = time.Hour * 72
+const AuthTokenValidTime = time.Minute * 15
+
+func GenerateCSRFSecret() (string, error) {
+	return GenerateRandomString(32)
+}
+
+func InitDB() {
+	refreshTokens = make(map[string]string)
+}
+
+func CreateNewTokens(uuid string, role string) (authTokenString, refreshTokenString, csrfSecret string, err error) {
+
+	csrfSecret, err = GenerateCSRFSecret()
+	if err != nil {
+		return
+	}
+
+	createRefreshTokenString(uuid, role, csrfSecret)
+
+	authTokenString, err = createAuthTokenString(uuid, role, csrfSecret)
+	if err != nil {
+		return
+	}
+
+	return
+}
+
+func CheckAndRefreshTokens(oldAuthTokenString string, oldRefreshTokenString string, oldCsrfSecret string) (newAuthTokenString, newRefreshTokenString, newCsrfSecret string, err error) {
+
+	if oldCsrfSecret == "" {
+		log.Println("No CSRF token!")
+		err = errors.New("Unauthorized")
+		return
+	}
+	authToken, err := jwt.ParseWithClaims(oldAuthTokenString, &TokenClaims{}, func(token *jwt.Token) (interface{}, error) {
+		return verifyKey, nil
+	})
+	authTokenClaims, ok := authToken.Claims.(*TokenClaims)
+	if !ok {
+		return "", "", "", err
+	}
+	if oldCsrfSecret != authTokenClaims.Csrf {
+		log.Println("CSRF token doesn't match jwt!")
+		err = errors.New("Unauthorized")
+		return "", "", "", err
+	}
+	if authToken.Valid {
+		log.Println("Auth token is valid")
+		newCsrfSecret = authTokenClaims.Csrf
+		newRefreshTokenString, err = updateRefreshTokenExp(oldRefreshTokenString)
+		newAuthTokenString = oldAuthTokenString
+		return newAuthTokenString, newRefreshTokenString, newCsrfSecret, err
+	} else if ve, ok := err.(*jwt.ValidationError); ok {
+		log.Println("Auth token is not valid")
+		if ve.Errors&(jwt.ValidationErrorExpired) != 0 {
+			log.Println("Auth token is expired")
+			newAuthTokenString, newCsrfSecret, err = updateAuthTokenString(oldRefreshTokenString, oldAuthTokenString)
+			if err != nil {
+				return "", "", "", err
+			}
+			newRefreshTokenString, err = updateRefreshTokenExp(oldRefreshTokenString)
+			if err != nil {
+				return "", "", "", err
+			}
+			newRefreshTokenString, err = updateRefreshTokenCsrf(newRefreshTokenString, newCsrfSecret)
+			return newAuthTokenString, newRefreshTokenString, newCsrfSecret, err
+		} else {
+			log.Println("Error in auth token")
+			err = errors.New("error in auth token")
+			return "", "", "", err
+		}
+	} else {
+		log.Println("Error in auth token")
+		err = errors.New("error in auth token")
+		return "", "", "", err
+	}
+}
+
+func createAuthTokenString(uuid string, role string, csrfSecret string) (authTokenString string, err error) {
+	authTokenExp := time.Now().Add(AuthTokenValidTime).Unix()
+	authClaims := TokenClaims{
+		jwt.StandardClaims{
+			Subject:   uuid,
+			ExpiresAt: authTokenExp,
+		},
+		role,
+		csrfSecret,
+	}
+
+	authJwt := jwt.NewWithClaims(jwt.GetSigningMethod("RS256"), authClaims)
+
+	authTokenString, err = authJwt.SignedString(signKey)
+	return
+}
+
+func createRefreshTokenString(uuid string, role string, csrfString string) (refreshTokenString string, err error) {
+	refreshTokenExp := time.Now().Add(RefreshTokenValidTime).Unix()
+	refreshJti, err := StoreRefreshToken()
+	if err != nil {
+		return
+	}
+
+	refreshClaims := TokenClaims{
+		jwt.StandardClaims{
+			Id:        refreshJti,
+			Subject:   uuid,
+			ExpiresAt: refreshTokenExp,
+		},
+		role,
+		csrfString,
+	}
+
+	refreshJwt := jwt.NewWithClaims(jwt.GetSigningMethod("RS256"), refreshClaims)
+
+	refreshTokenString, err = refreshJwt.SignedString(signKey)
+	return
+}
+
+func updateRefreshTokenExp(oldRefreshTokenString string) (newRefreshTokenString string, err error) {
+	refreshToken, err := jwt.ParseWithClaims(oldRefreshTokenString, &TokenClaims{}, func(token *jwt.Token) (interface{}, error) {
+		return verifyKey, nil
+	})
+
+	oldRefreshTokenClaims, ok := refreshToken.Claims.(*TokenClaims)
+	if !ok {
+		return
+	}
+
+	refreshTokenExp := time.Now().Add(RefreshTokenValidTime).Unix()
+
+	refreshClaims := TokenClaims{
+		jwt.StandardClaims{
+			Id:        oldRefreshTokenClaims.StandardClaims.Id, // jti
+			Subject:   oldRefreshTokenClaims.StandardClaims.Subject,
+			ExpiresAt: refreshTokenExp,
+		},
+		oldRefreshTokenClaims.Role,
+		oldRefreshTokenClaims.Csrf,
+	}
+
+	refreshJwt := jwt.NewWithClaims(jwt.GetSigningMethod("RS256"), refreshClaims)
+
+	newRefreshTokenString, err = refreshJwt.SignedString(signKey)
+	return
+}
+
+func updateAuthTokenString(refreshTokenString string, oldAuthTokenString string) (newAuthTokenString, csrfSecret string, err error) {
+	refreshToken, _ := jwt.ParseWithClaims(refreshTokenString, &TokenClaims{}, func(token *jwt.Token) (interface{}, error) {
+		return verifyKey, nil
+	})
+	refreshTokenClaims, ok := refreshToken.Claims.(*TokenClaims)
+	if !ok {
+		err = errors.New("error reading jwt claims")
+		return
+	}
+
+	if CheckRefreshToken(refreshTokenClaims.StandardClaims.Id) {
+
+		if refreshToken.Valid {
+
+			authToken, _ := jwt.ParseWithClaims(oldAuthTokenString, &TokenClaims{}, func(token *jwt.Token) (interface{}, error) {
+				return verifyKey, nil
+			})
+
+			oldAuthTokenClaims, ok := authToken.Claims.(*TokenClaims)
+			if !ok {
+				err = errors.New("error reading jwt claims")
+				return
+			}
+
+			csrfSecret, err = GenerateCSRFSecret()
+			if err != nil {
+				return
+			}
+
+			newAuthTokenString, err = createAuthTokenString(oldAuthTokenClaims.StandardClaims.Subject, oldAuthTokenClaims.Role, csrfSecret)
+
+			return
+		} else {
+			log.Println("Refresh token has expired!")
+
+			DeleteRefreshToken(refreshTokenClaims.StandardClaims.Id)
+
+			err = errors.New("Unauthorized")
+			return
+		}
+	} else {
+		log.Println("Refresh token has been revoked!")
+
+		err = errors.New("Unauthorized")
+		return
+	}
+}
+
+func RevokeRefreshToken(refreshTokenString string) error {
+	refreshToken, err := jwt.ParseWithClaims(refreshTokenString, &TokenClaims{}, func(token *jwt.Token) (interface{}, error) {
+		return verifyKey, nil
+	})
+	if err != nil {
+		return errors.New("could not parse refresh token with claims")
+	}
+
+	refreshTokenClaims, ok := refreshToken.Claims.(*TokenClaims)
+	if !ok {
+		return errors.New("could not read refresh token claims")
+	}
+
+	DeleteRefreshToken(refreshTokenClaims.StandardClaims.Id)
+
+	return nil
+}
+
+func updateRefreshTokenCsrf(oldRefreshTokenString string, newCsrfString string) (newRefreshTokenString string, err error) {
+	refreshToken, err := jwt.ParseWithClaims(oldRefreshTokenString, &TokenClaims{}, func(token *jwt.Token) (interface{}, error) {
+		return verifyKey, nil
+	})
+
+	oldRefreshTokenClaims, ok := refreshToken.Claims.(*TokenClaims)
+	if !ok {
+		return
+	}
+
+	refreshClaims := TokenClaims{
+		jwt.StandardClaims{
+			Id:        oldRefreshTokenClaims.StandardClaims.Id, // jti
+			Subject:   oldRefreshTokenClaims.StandardClaims.Subject,
+			ExpiresAt: oldRefreshTokenClaims.StandardClaims.ExpiresAt,
+		},
+		oldRefreshTokenClaims.Role,
+		newCsrfString,
+	}
+
+	refreshJwt := jwt.NewWithClaims(jwt.GetSigningMethod("RS256"), refreshClaims)
+
+	newRefreshTokenString, err = refreshJwt.SignedString(signKey)
+	return
+}
+
+func StoreRefreshToken() (jti string, err error) {
+	jti, err = GenerateRandomString(32)
+	if err != nil {
+		return jti, err
+	}
+
+	// check to make sure our jti is unique
+	for refreshTokens[jti] != "" {
+		jti, err = GenerateRandomString(32)
+		if err != nil {
+			return jti, err
+		}
+	}
+
+	refreshTokens[jti] = "valid"
+
+	return jti, err
+}
+
+func DeleteRefreshToken(jti string) {
+	delete(refreshTokens, jti)
+}
+
+func CheckRefreshToken(jti string) bool {
+	return refreshTokens[jti] != ""
+}
+
+func nullifyTokenCookies(w *http.ResponseWriter, r *http.Request) {
+	authCookie := http.Cookie{
+		Name:     "AuthToken",
+		Value:    "",
+		Expires:  time.Now().Add(-1000 * time.Hour),
+		HttpOnly: true,
+	}
+
+	http.SetCookie(*w, &authCookie)
+
+	refreshCookie := http.Cookie{
+		Name:     "RefreshToken",
+		Value:    "",
+		Expires:  time.Now().Add(-1000 * time.Hour),
+		HttpOnly: true,
+	}
+
+	http.SetCookie(*w, &refreshCookie)
+
+	// if present, revoke the refresh cookie from db
+	RefreshCookie, refreshErr := r.Cookie("RefreshToken")
+	if refreshErr == http.ErrNoCookie {
+		// do nothing, there is no refresh cookie present
+		return
+	} else if refreshErr != nil {
+		log.Panic("panic: ", refreshErr)
+		http.Error(*w, http.StatusText(500), 500)
+	}
+
+	RevokeRefreshToken(RefreshCookie.Value)
+}
+
+func setAuthAndRefreshCookies(w *http.ResponseWriter, authTokenString string, refreshTokenString string) {
+	authCookie := http.Cookie{
+		Name:     "AuthToken",
+		Value:    authTokenString,
+		HttpOnly: true,
+	}
+
+	http.SetCookie(*w, &authCookie)
+
+	refreshCookie := http.Cookie{
+		Name:     "RefreshToken",
+		Value:    refreshTokenString,
+		HttpOnly: true,
+	}
+
+	http.SetCookie(*w, &refreshCookie)
+}
+
+func grabCsrfFromReq(r *http.Request) string {
+	csrfFromFrom := r.FormValue("X-CSRF-Token")
+
+	if csrfFromFrom != "" {
+		return csrfFromFrom
+	} else {
+		return r.Header.Get("X-CSRF-Token")
+	}
+}
