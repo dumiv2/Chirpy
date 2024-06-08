@@ -66,10 +66,19 @@
                                 <p>Owner ID: {{.OwnerID}}</p>
                                 <p>Playground ID: {{.ID}}</p>
                             </div>
+                        
                         </div>
                         <div class="card-footer p-4 pt-0 border-top-0 bg-transparent">
                             <div class="text-center"><a class="btn btn-outline-dark mt-auto" href="/booking">Book Now</a></div>
-                            <div class="text-center mt-2"><a class="btn btn-outline-dark mt-auto" href="/booking/{{.ID}}">Booking Status</a></div>
+                            <div class="text-center mt-2"><a class="btn btn-outline-dark mt-auto" href="/booking/{{.ID}}">Booking Status</a> </div>
+                                <div class="text-center mt-3">
+                                {{ if .CanDelete }}
+                                <form action="/playgrounds/{{ .ID }}" method="POST">
+                                    <input type="hidden" name="_method" value="DELETE">
+                                    <button type="submit">Delete Playground</button>
+                                </form>
+                                {{ end }}</div>
+                            
                         </div>
                     </div>
                 </div>

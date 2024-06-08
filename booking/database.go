@@ -24,6 +24,7 @@ type Playground struct {
 	CancellationPeriod int    `json:"cancellation_period,omitempty"`
 	OwnerID          int     `json:"owner_id,omitempty"` 
 	Image string `json:"image,omitempty"`
+	CanDelete bool `json:"can_delete,omitempty"`
 }
 
 type User struct {

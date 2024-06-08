@@ -87,7 +87,7 @@ func main() {
 	r.Get("/register/playground", ResPlayHTMLHandler)
 	//READ
 	r.Get("/", GetPlaygroundsHandler(db))
-	r.Get("/playgrounds/{id}", GetPlaygroundHandler(db))
+	r.Get("/playgrounds/{id}", GetPlaygroundHandler(db,apiCfg))
 	//DELETE
 	r.With(JWTMiddleware(apiCfg, true)).Post("/playgrounds/{id}", DeletePlaygroundHandler(db, apiCfg))
 
@@ -1163,33 +1163,54 @@ func GetPlaygroundsHandler(db *booking.DB) http.HandlerFunc {
     }
 }
 
-func GetPlaygroundHandler(db *booking.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		idStr := chi.URLParam(r, "id")
-		id, err := strconv.Atoi(idStr)
-		if err != nil {
-			http.Error(w, "Invalid playground ID: "+err.Error(), http.StatusBadRequest)
-			return
-		}
+func GetPlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        idStr := chi.URLParam(r, "id")
+        id, err := strconv.Atoi(idStr)
+        if err != nil {
+            http.Error(w, "Invalid playground ID: "+err.Error(), http.StatusBadRequest)
+            return
+        }
 
-		playground, err := db.GetPlaygroundByID(id)
-		if err != nil {
-			http.Error(w, "Failed to get playground: "+err.Error(), http.StatusNotFound)
-			return
-		}
+        playground, err := db.GetPlaygroundByID(id)
+        if err != nil {
+            http.Error(w, "Failed to get playground: "+err.Error(), http.StatusNotFound)
+            return
+        }
 
-		tmpl, err := template.ParseFiles("playground.html")
-		if err != nil {
-			http.Error(w, "Failed to parse HTML template: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
+        // Check if the authenticated user is the owner of the playground
+        cookie, err := r.Cookie("token")
+        if err == nil {
+            tokenString := cookie.Value
+            token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+                return []byte(cfg.jwtSecret), nil
+            })
+            if err == nil && token.Valid {
+                claims, ok := token.Claims.(jwt.MapClaims)
+                if ok {
+                    ownerIDFloat64, ok := claims["owner_id"].(float64)
+                    if ok {
+                        ownerID := int(ownerIDFloat64)
+                        if playground.OwnerID == ownerID {
+                            playground.CanDelete = true
+                        }
+                    }
+                }
+            }
+        }
 
-		err = tmpl.Execute(w, playground)
-		if err != nil {
-			http.Error(w, "Failed to execute HTML template: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}
+        tmpl, err := template.ParseFiles("playground.html")
+        if err != nil {
+            http.Error(w, "Failed to parse HTML template: "+err.Error(), http.StatusInternalServerError)
+            return
+        }
+
+        err = tmpl.Execute(w, playground)
+        if err != nil {
+            http.Error(w, "Failed to execute HTML template: "+err.Error(), http.StatusInternalServerError)
+            return
+        }
+    }
 }
 
 var loginAttempts = make(map[string]int)
@@ -1416,18 +1437,17 @@ func UpdateUserHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 
 func DeletePlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Extract the JWT token from the request headers
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			http.Error(w, "Missing Authorization header", http.StatusUnauthorized)
+		cookie, err := r.Cookie("token")
+		if err != nil {
+			if err == http.ErrNoCookie {
+				http.Error(w, "Missing token cookie", http.StatusUnauthorized)
+				return
+			}
+			http.Error(w, "Failed to get token from cookie", http.StatusBadRequest)
 			return
 		}
 
-		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-		if tokenString == "" {
-			http.Error(w, "Invalid token", http.StatusUnauthorized)
-			return
-		}
+		tokenString := cookie.Value
 
 		// Validate the JWT token
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
@@ -1479,7 +1499,8 @@ func DeletePlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 			return
 		}
 
-		w.WriteHeader(http.StatusNoContent)
+		http.Redirect(w, r, "/success?messageType=DeletePlaygroundSuccess", http.StatusSeeOther)
+
 	}
 }
 
