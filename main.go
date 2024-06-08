@@ -77,7 +77,7 @@ func main() {
 	r.Post("/login/owner", OwnerLoginHandler(db, apiCfg))
 	//UPDATE
 	r.With(JWTMiddleware(apiCfg, true)).Post("/owner/profile/change_password", ChangeOwnerPasswordHandler(db, apiCfg))
-	r.With(JWTMiddleware(apiCfg, true)).Get("/owner/profile", OwnerProfileHTMLHandler) 
+	r.With(JWTMiddleware(apiCfg, true)).Get("/owner/profile", OwnerProfileHTMLHandler(db, apiCfg)) 
 	//DELETE
 	r.With(JWTMiddleware(apiCfg, true)).Post("/owner/profile/delete_account",DeleteOwnerHandler(db, apiCfg))
 
@@ -88,6 +88,8 @@ func main() {
 	//READ
 	r.Get("/", GetPlaygroundsHandler(db))
 	r.Get("/playgrounds/{id}", GetPlaygroundHandler(db,apiCfg))
+	//UPDATE
+	r.Post("/owner/profile/update_playground", UpdatePlaygroundHandler(db,apiCfg))
 	//DELETE
 	r.With(JWTMiddleware(apiCfg, true)).Post("/playgrounds/{id}", DeletePlaygroundHandler(db, apiCfg))
 
@@ -386,6 +388,116 @@ func ChangePasswordHandler(db *booking.DB, apiCfg apiConfig) http.HandlerFunc {
         http.Redirect(w, r, "/success?messageType=passwordChangeSuccess", http.StatusSeeOther)
     }
 }
+func UpdatePlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Extract the JWT token from the request cookies
+		cookie, err := r.Cookie("token")
+		if err != nil {
+			if err == http.ErrNoCookie {
+				http.Error(w, "Missing token cookie", http.StatusUnauthorized)
+				return
+			}
+			http.Error(w, "Failed to get token from cookie", http.StatusBadRequest)
+			return
+		}
+
+		tokenString := cookie.Value
+
+		// Validate the JWT token
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			return []byte(cfg.jwtSecret), nil
+		})
+		if err != nil || !token.Valid {
+			http.Error(w, "Invalid token", http.StatusUnauthorized)
+			return
+		}
+
+		// Extract owner ID from the token claims
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			http.Error(w, "Invalid token claims", http.StatusUnauthorized)
+			return
+		}
+
+		ownerIDFloat64, ok := claims["owner_id"].(float64)
+		if !ok {
+			http.Error(w, "Invalid owner ID in token claims", http.StatusUnauthorized)
+			return
+		}
+
+		ownerID := int(ownerIDFloat64)
+
+		// Parse form data
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Invalid form data", http.StatusBadRequest)
+			return
+		}
+
+		// Extract form parameters
+		playgroundIDStr := r.FormValue("playground_id")
+		playgroundID, err := strconv.Atoi(playgroundIDStr)
+		if err != nil {
+			http.Error(w, "Invalid playground ID", http.StatusBadRequest)
+			return
+		}
+
+		name := r.FormValue("name")
+		location := r.FormValue("location")
+		size := r.FormValue("size")
+		pricePerHourStr := r.FormValue("price_per_hour")
+		pricePerHour, err := strconv.ParseFloat(pricePerHourStr, 64)
+		if err != nil {
+			http.Error(w, "Invalid price per hour", http.StatusBadRequest)
+			return
+		}
+
+		// Load the playground from the database
+		playground, err := db.GetPlaygroundByID(playgroundID)
+		if err != nil {
+			http.Error(w, "Unable to load playgrounds", http.StatusInternalServerError)
+			return
+		}
+
+
+
+		// Ensure the playground belongs to the owner
+		if playground.OwnerID != ownerID {
+			http.Error(w, "Unauthorized: you do not own this playground", http.StatusUnauthorized)
+			return
+		}
+
+		// Update only the specified fields
+		playground.Name = name
+		playground.Location = location
+		playground.Size = size
+		playground.PricePerHour = pricePerHour
+
+		// Update the playground in the database
+		err = db.UpdatePlayground(playgroundID, playground)
+		if err != nil {
+			http.Error(w, "Unable to update playground", http.StatusInternalServerError)
+			return
+		}
+
+		// Return the updated playground resource
+		response := struct {
+			ID           int     `json:"id"`
+			Name         string  `json:"name"`
+			Location     string  `json:"location"`
+			Size         string  `json:"size"`
+			PricePerHour float64 `json:"price_per_hour"`
+		}{
+			ID:           playground.ID,
+			Name:         playground.Name,
+			Location:     playground.Location,
+			Size:         playground.Size,
+			PricePerHour: playground.PricePerHour,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}
+}
 // ChangeOwnerPasswordHandler handles password changes for owners
 func ChangeOwnerPasswordHandler(db *booking.DB, apiCfg apiConfig) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -522,9 +634,67 @@ func UserProfileHTMLHandler(w http.ResponseWriter, r *http.Request) {
     // Serve the HTML form for changing the password
     renderPage(w, r, "profile_user.html")
 }
-func OwnerProfileHTMLHandler(w http.ResponseWriter, r *http.Request) {
-    // Serve the HTML form for changing the password
-    renderPage(w, r, "profile_owner.html")
+func OwnerProfileHTMLHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Extract the JWT token from the request cookies
+		cookie, err := r.Cookie("token")
+		if err != nil {
+			http.Error(w, "Missing token cookie", http.StatusUnauthorized)
+			return
+		}
+
+		tokenString := cookie.Value
+
+		// Validate the JWT token
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			return []byte(cfg.jwtSecret), nil
+		})
+		if err != nil || !token.Valid {
+			http.Error(w, "Invalid token", http.StatusUnauthorized)
+			return
+		}
+
+		// Extract user ID from the token claims
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			http.Error(w, "Invalid token claims", http.StatusUnauthorized)
+			return
+		}
+
+		ownerIDFloat64, ok := claims["owner_id"].(float64)
+		if !ok {
+			http.Error(w, "Invalid owner ID in token claims", http.StatusUnauthorized)
+			return
+		}
+
+		ownerID := int(ownerIDFloat64)
+
+		// Fetch playgrounds owned by the user
+		playgrounds, err := db.GetPlaygroundsByOwner(ownerID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		data := struct {
+			Playgrounds []booking.Playground
+		}{
+			Playgrounds: playgrounds,
+		}
+
+
+		// Parse and execute the template
+		tmpl, err := template.ParseFiles("profile_owner.html")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		err = tmpl.Execute(w, data)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	}
 }
 func PasswordResetRequesHTMLtHandler(w http.ResponseWriter, r *http.Request) {
     // Serve the HTML form for changing the password
