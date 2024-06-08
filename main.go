@@ -1058,7 +1058,11 @@ func RegisterPlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 		name := SanitizeInput(r.FormValue("name"))
 		location := SanitizeInput(r.FormValue("location"))
 		size := SanitizeInput(r.FormValue("size"))
-		availableHours := SanitizeInput(r.FormValue("available_hours"))
+		startTime := SanitizeInput(r.FormValue("start_time"))
+		endTime := SanitizeInput(r.FormValue("end_time"))
+		
+		// Construct the availableHours string
+		availableHours := fmt.Sprintf("%s - %s", startTime, endTime)		
 		cancellation_period := SanitizeInput(r.FormValue("cancellation_period"))
 		price_per_hour := SanitizeInput(r.FormValue("price_per_hour"))
 		price_per_hour_float, _ := strconv.ParseFloat(strings.TrimSpace(price_per_hour), 64)
