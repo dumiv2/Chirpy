@@ -132,6 +132,12 @@ func main() {
 	protectedFileServer := http.StripPrefix("/static", fileServer)
 	r.Handle("/static/*", protectedFileServer)
 
+	// Custom 404 handler
+	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		http.ServeFile(w, r, "404.html")
+	})
+
 	go func() {
 		for {
 			time.Sleep(15 * time.Minute)
