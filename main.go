@@ -1349,29 +1349,24 @@ func GetPlaygroundsHandler(db *booking.DB) http.HandlerFunc {
 			return
 		}
 
-		// Parse the HTML template
-		tmpl, err := template.ParseFiles("playgrounds.html")
-		if err != nil {
-			http.Error(w, "Failed to parse HTML template: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// Define a custom template function for HTML escaping
-		funcMap := template.FuncMap{
-			"safeHTML": func(s string) template.HTML {
-				return template.HTML(html.EscapeString(s))
-			},
-		}
-
-		// Associate the custom function map with the template
-		tmpl = tmpl.Funcs(funcMap)
-
-		// Execute the HTML template with the playgrounds data
-		err = tmpl.Execute(w, playgrounds)
-		if err != nil {
-			http.Error(w, "Failed to execute HTML template: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
+        // Define a custom template function for HTML escaping
+        funcMap := template.FuncMap{
+            "safeHTML": func(s string) template.HTML {
+                return template.HTML(html.EscapeString(s))
+            },
+        }
+		// Parse the HTML template with the custom function map
+        tmpl, err := template.New("playgrounds.html").Funcs(funcMap).ParseFiles("playgrounds.html")
+        if err != nil {
+            http.Error(w, "Failed to parse HTML template: "+err.Error(), http.StatusInternalServerError)
+            return
+        }
+        // Execute the HTML template with the playgrounds data
+        err = tmpl.Execute(w, playgrounds)
+        if err != nil {
+            http.Error(w, "Failed to execute HTML template: "+err.Error(), http.StatusInternalServerError)
+            return
+        }
 	}
 }
 
