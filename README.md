@@ -2,29 +2,43 @@
 
 The football playground booking system is a web application designed to facilitate the booking of football playgrounds for matches and events. It allows users to browse available playgrounds, schedule matches, and manage bookings.
 
-## Prerequisites
+## Feature
+- User Registration and Authentication: Users can register, log in, and log out.
+- Browse Playgrounds: Users can view a list of available football playgrounds.
+- Booking Management: Users can book playgrounds for specific times and dates, view their bookings, and cancel if necessary.
+- Admin Interface: Admins can manage playground details, view all bookings, and handle user management.
 
-- Go
-- Docker
-- Jenkins
-- Kubernetes
+## Tech Stack
+- Frontend: HTML, CSS, JavaScript
+- Backend: Golang
+- Database: JSON
+- Authentication: JWT (JSON Web Token)
 
-## Building the Docker Image
-
-First, we'll need to build a Docker image for Chirpy. This can be done by creating a Dockerfile with the necessary instructions to build the image.
-
-Once the Dockerfile is created, we can build the image by running the following command in a kaniko container: 
-
+## Installation
+1. Clone the repository:
 ```
-/kaniko/executor --context `pwd` --destination conmeobeou1253/go-app:1.0
+git clone https://github.com/yourusername/football-playground-booking.git
+cd football-playground-booking
 ```
+2. Install dependencies:
+```
+go mod tidy
+ ```
+3. Set up environment variables:
+Create a .env file in the root directory and add the following:
+```
+JWT_SECRET=YOUR_SECRET
+EMAIL=YOUR_EMAIL
+EMAIL_PASSWORD=YOUR_PASSWORD
+```
+4. Run the application:
+```
+ go run main.go
+```
+## Usage
+- Register an account: Navigate to the registration page and create a new account.
+- Login: Use your credentials to log in.
+- Browse Playgrounds: View available playgrounds and their details.
+- Book a Playground: Select a playground, choose a date and time, and confirm your booking.
 
-## Deploying with Jenkins and Kubernetes
 
-Next, we'll use Jenkins to automate the deployment of Chirpy to Kubernetes. Jenkins will be used to build the Docker image, push it to a container registry, and deploy it to Kubernetes.
-
-First, we'll need to create a Jenkins pipeline that includes the necessary steps to build, push, and deploy the image. You can find the Jenkinsfile in the root of the directory.
-
-Once the Jenkins pipeline is set up, we can trigger it to automatically build, push, and deploy Chirpy to Kubernetes.
-
-That's it! We've successfully built and deployed Chirpy using Go, Docker, Jenkins, and Kubernetes. 😊
