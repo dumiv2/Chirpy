@@ -15,7 +15,7 @@ import (
 	"unicode"
 
 	"io/ioutil"
-	"log"
+	//"log"
 	"net/http"
 	"net/smtp"
 	"os"
@@ -29,6 +29,7 @@ import (
 	"github.com/golang-jwt/jwt"
 	"github.com/joho/godotenv"
 	"golang.org/x/crypto/bcrypt"
+    "github.com/rs/zerolog/log"
 )
 
 // JWTClaims represents the claims for JWT token
@@ -52,12 +53,12 @@ type apiConfig struct {
 func main() {
 	err := godotenv.Load()
 	if err != nil {
-		log.Fatal("Error loading .env file")
+		log.Fatal().Msg("Error loading .env file")
 	}
 
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
-		log.Fatal("JWT_SECRET environment variable is not set")
+		log.Fatal().Msg("JWT_SECRET environment variable is not set")
 	}
 
 	apiCfg := apiConfig{
@@ -65,7 +66,7 @@ func main() {
 	}
 	db, err := booking.NewDB("database.json")
 	if err != nil {
-		log.Fatalf("Error creating database: %v", err)
+		log.Fatal().Msgf("Error creating database: %v", err)
 	}
 
 	r := chi.NewRouter()
@@ -138,7 +139,7 @@ func main() {
 			loginAttemptMutex.Unlock()
 		}
 	}()
-	log.Println("Server started on port 8080")
+	log.Info().Msg("Server started on port 8080")
 	http.ListenAndServe(":8080", r)
 }
 
@@ -249,7 +250,8 @@ func sendResetEmail(email, token string) error {
 	auth := smtp.PlainAuth("", from, password, smtpHost)
 	err := smtp.SendMail(smtpHost+":"+smtpPort, auth, from, to, message)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal().Err(err).Msg("Fatal error")
+
 	}
 
 	return nil
@@ -474,21 +476,21 @@ func renderPage(w http.ResponseWriter, r *http.Request, content string) {
 	headerTemplate, err := os.ReadFile("header.html")
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		log.Println("Failed to read header HTML file:", err)
+		log.Info().Err(err).Msg("Failed to read header HTML file:")
 		return
 	}
 
 	footerTemplate, err := os.ReadFile("footer.html")
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		log.Println("Failed to read footer HTML file:", err)
+		log.Info().Err(err).Msg("Failed to read footer HTML file:")
 		return
 	}
 
 	contentTemplate, err := os.ReadFile(content)
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		log.Println("Failed to read footer HTML file:", err)
+		log.Info().Err(err).Msg("Failed to read footer HTML file:")
 		return
 	}
 
@@ -496,19 +498,19 @@ func renderPage(w http.ResponseWriter, r *http.Request, content string) {
 
 	// Write header template
 	if _, err := w.Write(headerTemplate); err != nil {
-		log.Println("Failed to write header template:", err)
+		log.Info().Err(err).Msg("Failed to write header template:")
 		return
 	}
 
 	// Write content
 	if _, err := w.Write(contentTemplate); err != nil {
-		log.Println("Failed to write content:", err)
+		log.Info().Err(err).Msg("Failed to write content:")
 		return
 	}
 
 	// Write footer template
 	if _, err := w.Write(footerTemplate); err != nil {
-		log.Println("Failed to write footer template:", err)
+		log.Info().Err(err).Msg("Failed to write footer template:")
 		return
 	}
 }
@@ -694,7 +696,7 @@ func RegisterOwnerHandler(db *booking.DB) http.HandlerFunc {
 		err := r.ParseForm()
 		if err != nil {
 			http.Error(w, "Failed to parse form data", http.StatusBadRequest)
-			log.Println("Failed to parse form data:", err)
+			log.Info().Err(err).Msg("Failed to parse form data:")
 			return
 		}
 
@@ -717,7 +719,7 @@ func RegisterOwnerHandler(db *booking.DB) http.HandlerFunc {
 			   err = validate.Struct(owner)
 			   if err != nil {
 				   http.Error(w, "Invalid input: "+err.Error(), http.StatusBadRequest)
-				   log.Println("Invalid input:", err)
+				   log.Info().Err(err).Msg("Invalid input:")
 				   return
 			   }
 
@@ -731,7 +733,7 @@ func RegisterOwnerHandler(db *booking.DB) http.HandlerFunc {
 		_, err = db.GetOwnerByEmail(email)
 		if err == nil {
 			http.Error(w, "Owner with this email already exists", http.StatusConflict)
-			log.Println("Owner with this email already exists")
+			log.Info().Msg("Owner with this email already exists")
 			return
 		}
 
@@ -739,7 +741,7 @@ func RegisterOwnerHandler(db *booking.DB) http.HandlerFunc {
 		_, err = db.CreateOwner(name, email, password, phone, location)
 		if err != nil {
 			http.Error(w, "Failed to register owner. Please try again.", http.StatusInternalServerError)
-			log.Println("Failed to register owner:", err)
+			log.Info().Err(err).Msg("Failed to register owner:")
 			return
 		}
 
@@ -771,7 +773,7 @@ func RegisterUserHandler(db *booking.DB) http.HandlerFunc {
 		err := r.ParseForm()
 		if err != nil {
 			http.Error(w, "Failed to parse form data", http.StatusBadRequest)
-			log.Println("Failed to parse form data:", err)
+			log.Info().Err(err).Msg("Failed to parse form data:")
 			return
 		}
 
@@ -789,7 +791,7 @@ func RegisterUserHandler(db *booking.DB) http.HandlerFunc {
         err = validate.Struct(user)
         if err != nil {
             http.Error(w, "Invalid input: "+err.Error(), http.StatusBadRequest)
-            log.Println("Invalid input:", err)
+            log.Info().Err(err).Msg("Invalid input:")
             return
         }
 
@@ -810,7 +812,7 @@ func RegisterUserHandler(db *booking.DB) http.HandlerFunc {
 		_, err = db.CreateUser(email, password)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
-			log.Println("Failed to create user:", err)
+			log.Info().Err(err).Msg("Failed to create user:")
 			return
 		}
 
@@ -1100,7 +1102,7 @@ func RegisterPlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 			err = validate.Struct(playground)
 			if err != nil {
 				http.Error(w, "Invalid input: "+err.Error(), http.StatusBadRequest)
-				log.Println("Invalid input:", err)
+				log.Info().Err(err).Msg("Invalid input:")
 				return
 			}
 		// Create the playground
@@ -1197,13 +1199,13 @@ func UserLoginHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 		err := r.ParseForm()
 		if err != nil {
 			http.Error(w, "Failed to parse form data", http.StatusBadRequest)
-			log.Println("Failed to parse form data:", err)
+			log.Info().Err(err).Msg("Failed to parse form data:")
 			return
 		}
 
 		// Extract login information from the form
 		email := r.FormValue("email")
-		log.Println(email)
+		log.Info().Msg(email)
 		password := r.FormValue("password")
 
 		// Rate limiting
@@ -1221,7 +1223,7 @@ func UserLoginHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 		user, err := db.GetUserByEmail(email)
 		if err != nil {
 			http.Error(w, "Invalid email or password", http.StatusUnauthorized)
-			log.Println("Invalid email or password:", err)
+			log.Info().Err(err).Msg("Invalid email or password:")
 			return
 		}
 
@@ -1229,7 +1231,7 @@ func UserLoginHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 		err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password))
 		if err != nil {
 			http.Error(w, "Invalid email or password", http.StatusUnauthorized)
-			log.Println("Invalid email or password:", err)
+			log.Info().Err(err).Msg("Invalid email or password:")
 			return
 		}
 
@@ -1276,7 +1278,7 @@ func OwnerLoginHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 		err := r.ParseForm()
 		if err != nil {
 			http.Error(w, "Failed to parse form data", http.StatusBadRequest)
-			log.Println("Failed to parse form data:", err)
+			log.Info().Err(err).Msg("Failed to parse form data:")
 			return
 		}
 
@@ -1299,14 +1301,14 @@ func OwnerLoginHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 		owner, err := db.GetOwnerByEmail(email)
 		if err != nil {
 			http.Error(w, "Owner not found", http.StatusUnauthorized)
-			log.Println("Owner not found:", err)
+			log.Info().Err(err).Msg("Owner not found:")
 			return
 		}
 
 		err = bcrypt.CompareHashAndPassword([]byte(owner.Password), []byte(password))
 		if err != nil {
 			http.Error(w, "Invalid email or password", http.StatusUnauthorized)
-			log.Println("Invalid email or password:", err)
+			log.Info().Err(err).Msg("Invalid email or password:")
 			return
 		}
 
@@ -1328,7 +1330,7 @@ func OwnerLoginHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 		tokenString, err := token.SignedString([]byte(cfg.jwtSecret))
 		if err != nil {
 			http.Error(w, "Failed to generate token", http.StatusInternalServerError)
-			log.Println("Failed to generate token:", err)
+			log.Info().Err(err).Msg("Failed to generate token:")
 			return
 		}
 
@@ -1555,7 +1557,7 @@ func BookPlaygroundHandler(db *booking.DB, cfg apiConfig) http.HandlerFunc {
 				err = validate.Struct(bookingRequest)
 				if err != nil {
 					http.Error(w, "Invalid input: "+err.Error(), http.StatusBadRequest)
-					log.Println("Invalid input:", err)
+					log.Info().Err(err).Msg("Invalid input:")
 					return
 				}
 		// Validate the booking request
@@ -1611,7 +1613,7 @@ func GetBookingsForPlaygroundHandler(db *booking.DB) http.HandlerFunc {
 		playgroundID, err := strconv.Atoi(playgroundIDStr)
 		if err != nil {
 			http.Error(w, "Invalid playground ID", http.StatusBadRequest)
-			log.Println("Invalid playground ID:", err)
+			log.Info().Err(err).Msg("Invalid playground ID:")
 			return
 		}
 
@@ -1619,7 +1621,7 @@ func GetBookingsForPlaygroundHandler(db *booking.DB) http.HandlerFunc {
 		bookings, err := db.GetBookingsForPlayground(playgroundID)
 		if err != nil {
 			http.Error(w, "Failed to get bookings for playground: "+err.Error(), http.StatusInternalServerError)
-			log.Println("Failed to get bookings for playground:", err)
+			log.Error().Err(err).Msg("Failed to get bookings for playground:")
 			return
 		}
 
