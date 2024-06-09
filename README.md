@@ -33,7 +33,7 @@ EMAIL_PASSWORD=YOUR_PASSWORD
 ```
 4. Run the application:
 ```
- go run main.go
+ go run main.go logger.go
 ```
 ## Usage
 - Register an account: Navigate to the registration page and create a new account.

@@ -51,6 +51,8 @@ type apiConfig struct {
 }
 
 func main() {
+	initLogger()
+
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal().Msg("Error loading .env file")
