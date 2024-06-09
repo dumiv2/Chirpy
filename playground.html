@@ -57,6 +57,8 @@
                     <div class="card h-100">
                         <div class="card-body p-4">
                             <div class="text-center">
+                                <img src="../{{.Image}}" alt="Playground Image">
+
                                 <h5 class="fw-bolder">{{.Name}}</h5>
                                 <p>Location: {{.Location}}</p>
                                 <p>Size: {{.Size}}</p>
@@ -75,7 +77,7 @@
                                 {{ if .CanDelete }}
                                 <form action="/playgrounds/{{ .ID }}" method="POST">
                                     <input type="hidden" name="_method" value="DELETE">
-                                    <button type="submit">Delete Playground</button>
+                                    <button type="submit" onclick="return confirm('Are you sure you want to delete your playground? This action cannot be undone.');">Delete Playground</button>
                                 </form>
                                 {{ end }}</div>
                             
